@@ -26,11 +26,12 @@ screen synthesises a plausible GPS track so the flow works on a simulator.
 
 ```bash
 npm run typecheck  # tsc --noEmit
+npm run lint       # eslint . — add --fix to apply what it can
 npm test           # jest — reward, geo and growth math
 npm run doctor     # expo-doctor
 ```
 
-CI runs the first two on every pull request, plus an `expo export` for Android and
+CI runs the first three on every pull request, plus an `expo export` for Android and
 iOS — that last one catches what `tsc` cannot: a bad import path, a missing native
 module, or anything Hermes refuses to compile. `npm run doctor` is deliberately not
 in CI: two of its checks call out to Expo's API and the React Native Directory, and
