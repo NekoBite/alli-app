@@ -1,0 +1,33 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+/**
+ * Non-sensitive persistence: cached balances, draft runs, UI preferences.
+ * Never put keys, seed phrases or session tokens here — use `secure.ts`.
+ */
+export const kv = {
+  async get<T>(key: string): Promise<T | null> {
+    const raw = await AsyncStorage.getItem(key);
+    if (raw === null) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
+  },
+
+  async set<T>(key: string, value: T): Promise<void> {
+    await AsyncStorage.setItem(key, JSON.stringify(value));
+  },
+
+  async remove(key: string): Promise<void> {
+    await AsyncStorage.removeItem(key);
+  },
+};
+
+export const KEYS = {
+  jogHistory: 'alli.jog.history',
+  garden: 'alli.garden.plots',
+  cart: 'alli.market.cart',
+  walletAddress: 'alli.wallet.address',
+  onboarded: 'alli.onboarded',
+} as const;

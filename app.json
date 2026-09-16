@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "Alli",
+    "slug": "alli-app",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "alli",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0A0F0D",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0F0D"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "xyz.trilumi.alli",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Alli uses your location to measure the distance and pace of your jog so it can award points.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Alli keeps measuring your jog while the app is in the background so your run is not cut short when the screen locks.",
+        "NSMotionUsageDescription": "Alli reads step count to cross-check GPS distance and filter out fake runs.",
+        "UIBackgroundModes": [
+          "location"
+        ]
+      }
+    },
+    "android": {
+      "package": "xyz.trilumi.alli",
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0F0D"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "ACTIVITY_RECOGNITION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Alli uses your location to measure the distance and pace of your jog so it can award points.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
