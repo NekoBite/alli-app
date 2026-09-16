@@ -1,5 +1,7 @@
 # Alli
 
+[![CI](https://github.com/NekoBite/alli-app/actions/workflows/ci.yml/badge.svg)](https://github.com/NekoBite/alli-app/actions/workflows/ci.yml)
+
 React Native (Expo SDK 57) app for Android and iOS. Four features:
 
 1. **Jogging** — GPS-tracked runs that earn points, redeemable for **ALLI** on BNB Smart Chain.
@@ -27,6 +29,12 @@ npm run typecheck  # tsc --noEmit
 npm test           # jest — reward, geo and growth math
 npm run doctor     # expo-doctor
 ```
+
+CI runs the first two on every pull request, plus an `expo export` for Android and
+iOS — that last one catches what `tsc` cannot: a bad import path, a missing native
+module, or anything Hermes refuses to compile. `npm run doctor` is deliberately not
+in CI: two of its checks call out to Expo's API and the React Native Directory, and
+a remote outage there should not turn the build red.
 
 ### Native builds
 
