@@ -52,6 +52,58 @@ jobs:
       - name: Test
         run: npm test -- --ci
 
+  server:
+    name: Server (typecheck & test)
+    runs-on: ubuntu-latest
+
+    # The reward tests run against a real Postgres, not a mock. The things worth
+    # testing here — the daily cap holding under concurrent submissions, the
+    # unique index that stops a retried upload paying twice — are precisely the
+    # behaviours a fake database would paper over.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: alli
+          POSTGRES_PASSWORD: alli
+          POSTGRES_DB: alli_test
+        ports:
+          - 5432:5432
+        # -d matters: without it pg_isready probes a database named after the
+        # user, which does not exist here, and a server answering "database does
+        # not exist" still counts as healthy — the gate would pass while telling
+        # us nothing. (This comment sits outside `options`, which is a folded
+        # scalar: a # inside it is literal text handed to docker, not a comment.)
+        options: >-
+          --health-cmd="pg_isready -U alli -d alli_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: postgres://alli:alli@localhost:5432/alli_test
+      # Test-only pepper. Real deployments generate their own; see server/.env.example.
+      TOKEN_SECRET: Y2ktdGVzdC1zZWNyZXQtbm90LXVzZWQtYW55d2hlcmUtZWxzZQ==
+      NODE_ENV: test
+      MAILER: console
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck --workspace server
+
+      - name: Test
+        run: npm test --workspace server
+
   bundle:
     # Catches what tsc cannot: a bad import path, a missing native module, or
     # anything Hermes refuses to compile. Metro bundles for both platforms on

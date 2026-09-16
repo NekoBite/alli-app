@@ -16,6 +16,8 @@ module.exports = [
       // `expo export` output, per platform.
       'dist-android/',
       'dist-ios/',
+      // Server build output.
+      'server/dist/',
       'expo-env.d.ts',
     ],
   },
@@ -44,6 +46,16 @@ module.exports = [
           caughtErrors: 'none',
         },
       ],
+    },
+  },
+
+  {
+    // The backend workspace. no-console is banned in the app because a stray
+    // log ships noise to users' devices in a release build; on a server stdout
+    // IS the log, so the rule there would only push people to worse habits.
+    files: ['server/**/*.ts'],
+    rules: {
+      'no-console': 'off',
     },
   },
 ];
