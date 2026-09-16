@@ -19,3 +19,7 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+
+# Local output from `expo export`
+dist-android/
+dist-ios/

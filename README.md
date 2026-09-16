@@ -1,4 +1,4 @@
-# Alli — mobile app scaffold
+# Alli
 
 React Native (Expo SDK 57) app for Android and iOS. Four features:
 
@@ -15,7 +15,6 @@ in-memory mocks behind a typed interface, marked with `TODO`. Nothing here moves
 ## Run it
 
 ```bash
-cd mobile
 npm install
 npm start          # then press a (Android) / i (iOS), or scan with Expo Go
 ```
@@ -89,7 +88,7 @@ binary and is public** — no secrets, ever.
 Every tunable number lives in two files: `src/features/jogging/rewards.ts` (`REWARD_RULES`) and
 `src/features/garden/catalog.ts` (`SEEDS`). The values there are placeholders that make the UI
 legible — **they are not a balanced economy.** Before launch they belong on the server so they can
-be tuned without an app release. See [docs/alli-app-architecture.md](../docs/alli-app-architecture.md)
+be tuned without an app release. See [docs/architecture.md](docs/architecture.md)
 for the emission model and the sinks that have to absorb it.
 
 Current placeholders: 100 points per validated km, 1,000 points = 1 ALLI, 1,000 points/day cap.
