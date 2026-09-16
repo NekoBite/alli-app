@@ -4,6 +4,7 @@ import { FlatList, StyleSheet, View } from 'react-native';
 
 import { Button, Card, EmptyState, Pill, Row, Screen, StatTile, Text } from '@/components';
 import { useJoggingStore } from '@/features/jogging/store';
+import { useWalletStore } from '@/features/wallet/store';
 import { pointsToAlli, REWARD_RULES } from '@/features/jogging/rewards';
 import type { JogSummary } from '@/features/jogging/types';
 import { colors, spacing } from '@/theme';
@@ -13,6 +14,7 @@ import { relativeTime } from '@/utils/time';
 export default function JogScreen() {
   const router = useRouter();
   const { history, pointsBalance, redeeming, redeemPoints, refresh, loading } = useJoggingStore();
+  const account = useWalletStore((state) => state.account);
 
   useEffect(() => {
     void refresh();
@@ -46,9 +48,11 @@ export default function JogScreen() {
               <Button
                 label="Redeem for ALLI"
                 variant="secondary"
-                disabled={redeemable <= 0}
+                // Redemption is an on-chain payout; without an address there
+                // is nowhere for it to land.
+                disabled={redeemable <= 0 || !account}
                 loading={redeeming}
-                onPress={() => void redeemPoints(redeemable)}
+                onPress={() => account && void redeemPoints(redeemable, account.address)}
               />
             </Card>
 

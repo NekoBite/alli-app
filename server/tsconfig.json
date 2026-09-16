@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+
+    // The three modules the server shares with the app, listed one by one
+    // rather than globbed. The rest of src/features/jogging (the store, the
+    // hook, the jest specs) depends on React, Expo and the @/ alias, and must
+    // stay out of the server's compile — the glob that pulled them in is
+    // exactly how this coupling would rot without anyone noticing.
+    "../src/features/jogging/types.ts",
+    "../src/features/jogging/geo.ts",
+    "../src/features/jogging/rewards.ts"
+  ]
+}

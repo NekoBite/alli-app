@@ -26,7 +26,7 @@ type JoggingState = {
   ) => RewardBreakdown;
   submitRun: (session: JogSession, rejectedPoints: number) => Promise<JogSummary>;
   /** Burns points and mints the matching ALLI to the user's wallet. */
-  redeemPoints: (points: number) => Promise<{ txHash: string; alli: number }>;
+  redeemPoints: (points: number, toAddress: string) => Promise<{ txHash: string; alli: number }>;
 };
 
 export const useJoggingStore = create<JoggingState>((set, get) => ({
@@ -75,10 +75,10 @@ export const useJoggingStore = create<JoggingState>((set, get) => ({
     return summary;
   },
 
-  async redeemPoints(points) {
+  async redeemPoints(points, toAddress) {
     set({ redeeming: true, error: undefined });
     try {
-      const result = await joggingApi.redeemPoints(points);
+      const result = await joggingApi.redeemPoints(points, toAddress);
       set((state) => ({
         pointsBalance: state.pointsBalance - points,
         redeeming: false,
