@@ -81,7 +81,7 @@ describe('gardenMultiplier', () => {
   });
 
   it('adds each living tree bonus', () => {
-    expect(gardenMultiplier([view(acacia.id)])).toBeCloseTo(1 + acacia.joggingBonus, 5);
+    expect(gardenMultiplier([view(acacia.id)])).toBeCloseTo(1 + acacia.runBonus, 5);
   });
 
   it('ignores spent trees', () => {

@@ -2,19 +2,22 @@ import { pool, transaction, type Db } from '../db/pool.ts';
 import { ApiError } from '../lib/errors.ts';
 import {
   calculateReward,
+  creditStepSamples,
   pointsToAlli,
   REWARD_RULES,
   summarizeTrack,
   type GeoPoint,
   type RewardBreakdown,
-} from '../shared/jogging.ts';
+  type StepSample,
+} from '../shared/run.ts';
 
 export type SubmitRunInput = {
   clientRunId: string;
   startedAt: number;
   endedAt?: number;
   track: GeoPoint[];
-  steps?: number;
+  /** Raw pedometer totals. The credited count is derived here, never accepted. */
+  stepSamples?: StepSample[];
   /** Client's own day bucket, so the cap follows the runner's local midnight. */
   day: string;
 };
@@ -196,6 +199,11 @@ export async function submitRun(userId: string, input: SubmitRunInput): Promise<
     // Recompute from the raw track. The identical function the phone ran.
     const stats = summarizeTrack(input.track);
 
+    // And re-credit the steps against that track. A client that reports a
+    // million steps over a track that never moved credits none of them, which
+    // is what stops a shaken phone completing a run and minting a star.
+    const steps = creditStepSamples(input.track, input.stepSamples ?? []).steps;
+
     const earnedToday = await pointsEarnedOn(db, userId, input.day);
     const streak = await streakDays(db, userId, input.day);
 
@@ -204,7 +212,7 @@ export async function submitRun(userId: string, input: SubmitRunInput): Promise<
         distanceMetres: stats.distanceMetres,
         movingSeconds: stats.movingSeconds,
         track: input.track,
-        steps: input.steps,
+        steps,
       },
       {
         pointsEarnedToday: earnedToday,
@@ -231,7 +239,7 @@ export async function submitRun(userId: string, input: SubmitRunInput): Promise<
         stats.distanceMetres,
         stats.movingSeconds,
         stats.rejectedPoints,
-        input.steps ?? null,
+        steps,
         JSON.stringify(reward),
         reward.points,
         reward.flags,
@@ -257,7 +265,7 @@ export async function submitRun(userId: string, input: SubmitRunInput): Promise<
       endedAt: run.ended_at,
       distanceMetres: stats.distanceMetres,
       movingSeconds: stats.movingSeconds,
-      steps: input.steps ?? null,
+      steps,
       reward,
       confirmed: true as const,
     };

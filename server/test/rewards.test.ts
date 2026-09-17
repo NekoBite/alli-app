@@ -3,21 +3,29 @@ import { randomUUID } from 'node:crypto';
 import { after, beforeEach, describe, it } from 'node:test';
 
 import { pool } from '../src/db/pool.ts';
-import { REWARD_RULES } from '../src/shared/jogging.ts';
+import { REWARD_RULES } from '../src/shared/run.ts';
 import {
   getProfile,
   openRedemption,
   failRedemption,
   streakMultiplier,
   submitRun,
-} from '../src/jogging/service.ts';
-import { createUser, DAY, drivingTrack, goodTrack, setupDb } from './helpers.ts';
+} from '../src/run/service.ts';
+import {
+  createUser,
+  DAY,
+  drivingTrack,
+  goodTrack,
+  setupDb,
+  stationaryTrack,
+  stepSamples,
+} from './helpers.ts';
 
 // File-scoped: closing the pool inside a suite would pull it out from under
 // every suite that runs after it.
 after(async () => pool.end());
 
-describe('jogging rewards', () => {
+describe('run rewards', () => {
   beforeEach(setupDb);
 
   const run = (over: Partial<Parameters<typeof submitRun>[1]> = {}) => ({
@@ -105,6 +113,56 @@ describe('jogging rewards', () => {
       results.some((r) => r.reward.flags.includes('daily-cap-reached')),
       'and the user is told why',
     );
+  });
+
+  it('credits steps the track backs, and pays the completed-run star', async () => {
+    const userId = await createUser();
+    const track = goodTrack(100);
+    // 50 steps every 5 fixes: ~70 m of ground for a ~1.4 m stride, which is
+    // both inside the window cap and inside the stride check.
+    const result = await submitRun(userId, run({ track, stepSamples: stepSamples(track, 50) }));
+
+    assert.deepEqual(result.reward.flags, []);
+    assert.equal(result.reward.steps, 1000);
+    assert.ok(result.reward.goalReached);
+    assert.equal(result.reward.stars, REWARD_RULES.starsPerCompletedRun);
+    assert.equal(result.steps, 1000, 'the credited count is what gets stored');
+  });
+
+  it('credits nothing for steps a phone reported while standing still', async () => {
+    const userId = await createUser();
+    const track = stationaryTrack(100);
+    // The shaken phone: thousands of steps, no ground covered.
+    const result = await submitRun(userId, run({ track, stepSamples: stepSamples(track, 500) }));
+
+    assert.equal(result.reward.steps, 0);
+    assert.equal(result.reward.stars, 0);
+    assert.equal(result.reward.points, 0);
+  });
+
+  it('caps a fabricated step count at what the distance could hold', async () => {
+    const userId = await createUser();
+    const track = goodTrack(100);
+    const honest = await submitRun(userId, run({ track, stepSamples: stepSamples(track, 50) }));
+    const inflated = await submitRun(
+      await createUser(),
+      run({ track, stepSamples: stepSamples(track, 100_000) }),
+    );
+
+    assert.ok(
+      inflated.reward.steps < 20 * 100_000,
+      'the claim is cut down to what the track supports',
+    );
+    assert.ok(inflated.reward.steps > honest.reward.steps, 'without punishing an honest count');
+  });
+
+  it('pays no star when the device sent no step samples at all', async () => {
+    const userId = await createUser();
+    const result = await submitRun(userId, run());
+
+    assert.equal(result.reward.steps, 0);
+    assert.equal(result.reward.stars, 0);
+    assert.ok(result.reward.points > 0, 'the distance still earns');
   });
 
   it('counts a streak only over consecutive days', async () => {

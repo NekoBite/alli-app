@@ -48,7 +48,7 @@ export function remainingYield(view: PlotView): number {
 }
 
 /**
- * Combined jogging bonus from every living tree, as a multiplier (1 = none).
+ * Combined run bonus from every living tree, as a multiplier (1 = none).
  * Capped so a large garden cannot outrun the emission schedule.
  */
 export const MAX_GARDEN_BONUS = 0.5;
@@ -56,6 +56,6 @@ export const MAX_GARDEN_BONUS = 0.5;
 export function gardenMultiplier(views: PlotView[]): number {
   const bonus = views
     .filter((view) => view.stage !== 'spent')
-    .reduce((sum, view) => sum + view.seed.joggingBonus, 0);
+    .reduce((sum, view) => sum + view.seed.runBonus, 0);
   return 1 + Math.min(MAX_GARDEN_BONUS, bonus);
 }

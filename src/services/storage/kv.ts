@@ -25,7 +25,9 @@ export const kv = {
 };
 
 export const KEYS = {
-  jogHistory: 'alli.jog.history',
+  runHistory: 'alli.run.history',
+  /** The in-progress run, so closing the app mid-run does not lose it. */
+  runDraft: 'alli.run.draft',
   garden: 'alli.garden.plots',
   cart: 'alli.market.cart',
   walletAddress: 'alli.wallet.address',

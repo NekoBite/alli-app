@@ -28,3 +28,31 @@ export function countdown(msRemaining: number): string {
   if (hours > 0) return `${hours}h ${minutes % 60}m`;
   return `${minutes}m`;
 }
+
+const MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+] as const;
+
+/**
+ * The server's clock, in UTC — "17 Sep 2026, 00:03 UTC".
+ *
+ * Shown verbatim rather than converted to the device's zone on purpose: run
+ * credits and the purchase ceiling are counted in the server's month, and a
+ * phone whose clock disagrees should be able to see that it does.
+ */
+export function formatServerTime(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '—';
+  const date = new Date(ms);
+  const day = date.getUTCDate().toString().padStart(2, '0');
+  const month = MONTHS[date.getUTCMonth()];
+  const hours = date.getUTCHours().toString().padStart(2, '0');
+  const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+  return `${day} ${month} ${date.getUTCFullYear()}, ${hours}:${minutes} UTC`;
+}
+
+/** A calendar date for membership expiry — the device's zone, since it is a deadline. */
+export function formatDate(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '—';
+  return new Date(ms).toLocaleDateString();
+}

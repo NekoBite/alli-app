@@ -1,4 +1,4 @@
--- Jogging rewards: identity, the run record, and the points ledger.
+-- ALLI RUN rewards: identity, the run record, and the points ledger.
 --
 -- The ledger is the source of truth for points. A balance column would be
 -- faster to read and impossible to audit; every credit and debit here is a row,

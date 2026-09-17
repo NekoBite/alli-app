@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { migrate } from '../src/db/migrate.ts';
 import { pool } from '../src/db/pool.ts';
-import type { GeoPoint } from '../src/shared/jogging.ts';
+import type { GeoPoint, StepSample } from '../src/shared/run.ts';
 
 let migrated = false;
 
@@ -48,3 +48,31 @@ export function drivingTrack(points: number, startMs = 1_700_000_000_000): GeoPo
 }
 
 export const DAY = '2026-09-16';
+
+/** A phone sitting still: fixes keep arriving, the ground never changes. */
+export function stationaryTrack(points: number, startMs = 1_700_000_000_000): GeoPoint[] {
+  return Array.from({ length: points }, (_, i) => ({
+    latitude: 13.7563,
+    longitude: 100.5018,
+    timestamp: startMs + i * 5000,
+    accuracy: 6,
+  }));
+}
+
+/**
+ * Pedometer totals to go with a track: `perSample` steps every `every` fixes,
+ * reported as a running total the way the real sensor does.
+ */
+export function stepSamples(
+  track: GeoPoint[],
+  perSample: number,
+  every = 5,
+): StepSample[] {
+  const samples: StepSample[] = [];
+  let total = 0;
+  for (let i = every - 1; i < track.length; i += every) {
+    total += perSample;
+    samples.push({ timestamp: track[i]!.timestamp, steps: total });
+  }
+  return samples;
+}

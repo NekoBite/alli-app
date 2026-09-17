@@ -5,7 +5,7 @@ import { ZodError } from 'zod';
 import { authRoutes } from './auth/routes.ts';
 import { relayerStatus } from './chain/relayer.ts';
 import { env, isProduction } from './config/env.ts';
-import { joggingRoutes } from './jogging/routes.ts';
+import { runRoutes } from './run/routes.ts';
 import { ApiError } from './lib/errors.ts';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -74,7 +74,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(authRoutes);
-  await app.register(joggingRoutes);
+  await app.register(runRoutes);
 
   return app;
 }

@@ -40,10 +40,10 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="jog"
+        name="run"
         options={{
-          title: 'Run',
-          tabBarIcon: ({ focused }) => <TabGlyph label="RN" focused={focused} />,
+          title: 'ALLI RUN',
+          tabBarIcon: ({ focused }) => <TabGlyph label="AR" focused={focused} />,
         }}
       />
       <Tabs.Screen
