@@ -44,8 +44,8 @@ export const SubmitRunSchema = z.object({
   attestation: z.string().max(8192).optional(),
 });
 
-export const RedeemSchema = z.object({
-  points: z.number().int().positive(),
+export const ExchangeSchema = z.object({
+  stars: z.number().int().positive(),
   /** Where the ALLI goes. Checksummed on-chain format, validated by ethers later. */
   toAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'toAddress must be a 0x address'),
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

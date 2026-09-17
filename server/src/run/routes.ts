@@ -4,13 +4,13 @@ import { currentUser, requireUser } from '../auth/middleware.ts';
 import { assertRedemptionAvailable, sendAlli } from '../chain/relayer.ts';
 import { env } from '../config/env.ts';
 import { ApiError } from '../lib/errors.ts';
-import { DayQuerySchema, RedeemSchema, SubmitRunSchema } from './schemas.ts';
+import { DayQuerySchema, ExchangeSchema, SubmitRunSchema } from './schemas.ts';
 import {
-  failRedemption,
+  failExchange,
   getProfile,
   listRuns,
-  openRedemption,
-  settleRedemption,
+  openExchange,
+  settleExchange,
   submitRun,
 } from './service.ts';
 
@@ -47,33 +47,33 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.post('/v1/run/redeem', {
+  app.post('/v1/run/stars/exchange', {
     preHandler: requireUser,
     config: { rateLimit: { max: 10, timeWindow: '1 hour' } },
     handler: async (request) => {
-      const { points, toAddress, day } = RedeemSchema.parse(request.body);
+      const { stars, toAddress, day } = ExchangeSchema.parse(request.body);
       const user = currentUser(request);
 
-      // Checked before any points move. If the chain side is not ready, the
-      // user keeps their points and gets a straight answer.
+      // Checked before any stars move. If the chain side is not ready, the
+      // user keeps their stars and gets a straight answer.
       assertRedemptionAvailable();
 
-      const { redemptionId, alli } = await openRedemption({
+      const { redemptionId, alli } = await openExchange({
         userId: user.id,
-        points,
+        stars,
         toAddress,
         day,
       });
 
       try {
         const { hash } = await sendAlli(toAddress, alli.toString());
-        await settleRedemption(redemptionId, hash);
-        return { txHash: hash, alli };
+        await settleExchange(redemptionId, hash);
+        return { txHash: hash, alli, starsBalance: (await getProfile(user.id, day)).starsBalance };
       } catch (error) {
-        // The points are given back here. If the process dies before this runs,
+        // The stars are given back here. If the process dies before this runs,
         // the row is left `pending` for the reconciler — which is why the debit
         // and the transfer are deliberately not in one transaction.
-        await failRedemption(redemptionId, (error as Error).message);
+        await failExchange(redemptionId, (error as Error).message);
         throw error;
       }
     },

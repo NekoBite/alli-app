@@ -16,8 +16,6 @@ function entitlement(overrides: Partial<RunEntitlement> = {}): RunEntitlement {
     runsLeft: 10,
     runsThisMonth: 2,
     extraRunsBoughtThisMonth: 0,
-    stars: 0,
-    starsToday: 0,
     membership: {
       status: 'active',
       activeUntil: NOW + 7 * DAY,

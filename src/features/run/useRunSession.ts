@@ -15,8 +15,15 @@ const LOCATION_OPTIONS: Location.LocationOptions = {
   distanceInterval: 5,
 };
 
-/** Mock cadence: one synthesised fix every 5 s, ~14 m apart — a 2.8 m/s jog. */
-const MOCK_TICK_MS = 5000;
+/**
+ * Mock cadence: each synthesised fix is ~14 m and 5 s further on — a 2.8 m/s
+ * jog — but they arrive every 250 ms of wall clock, so the run plays at 20×.
+ * Without that, the 6,000-step quest would take half an hour to demonstrate.
+ * The session clock follows the synthesised one, so pace, stride and the step
+ * windows all stay internally consistent.
+ */
+const MOCK_TICK_MS = 250;
+const MOCK_TICK_SECONDS = 5;
 const MOCK_STEPS_PER_TICK = 17;
 
 export type PedometerState = 'unknown' | 'available' | 'unavailable';
@@ -156,8 +163,12 @@ export function useRunSession() {
     });
   }, []);
 
-  /** `reported` is the pedometer's running total for the current subscription. */
-  const addSteps = useCallback((reported: number) => {
+  /**
+   * `reported` is the pedometer's running total for the current subscription.
+   * `timestamp` has to come from the same clock as the track, or the server's
+   * re-credit pairs each window with the wrong stretch of ground.
+   */
+  const addSteps = useCallback((reported: number, timestamp: number = Date.now()) => {
     const delta = Math.max(0, Math.floor(reported) - consumedSteps.current);
     if (delta === 0) return;
     consumedSteps.current = Math.floor(reported);
@@ -176,7 +187,7 @@ export function useRunSession() {
         rawSteps,
         // The running total, not the window: the server pairs each sample with
         // the ground covered since the previous one and re-credits from there.
-        stepSamples: [...prev.stepSamples, { timestamp: Date.now(), steps: rawSteps }],
+        stepSamples: [...prev.stepSamples, { timestamp, steps: rawSteps }],
         metresAtLastStep: prev.distanceMetres,
       };
     });
@@ -228,28 +239,38 @@ export function useRunSession() {
     // A new pedometer subscription counts from zero again.
     consumedSteps.current = 0;
 
+    if (useMockSensors) {
+      // The synthesised run carries its own clock — see MOCK_TICK_MS.
+      let index = 0;
+      // Resuming continues the synthesised clock rather than jumping back to
+      // now, which would put the new fixes before the old ones.
+      const clock = latest.current.track.at(-1)?.timestamp ?? Date.now();
+      setState((prev) => ({ ...prev, pedometer: 'available' }));
+      mockTicker.current = setInterval(() => {
+        index += 1;
+        const timestamp = clock + index * MOCK_TICK_SECONDS * 1000;
+        addPoint({
+          // ~2.8 m/s — a believable 6 min/km jog.
+          latitude: 13.7563 + index * 0.000125,
+          longitude: 100.5018 + index * 0.00002,
+          timestamp,
+          accuracy: 6,
+        });
+        addSteps(index * MOCK_STEPS_PER_TICK, timestamp);
+        setState((prev) =>
+          prev.status === 'running'
+            ? { ...prev, elapsedSeconds: index * MOCK_TICK_SECONDS }
+            : prev,
+        );
+      }, MOCK_TICK_MS);
+      return;
+    }
+
     timer.current = setInterval(() => {
       setState((prev) =>
         prev.status === 'running' ? { ...prev, elapsedSeconds: prev.elapsedSeconds + 1 } : prev,
       );
     }, 1000);
-
-    if (useMockSensors) {
-      let index = 0;
-      setState((prev) => ({ ...prev, pedometer: 'available' }));
-      mockTicker.current = setInterval(() => {
-        index += 1;
-        addPoint({
-          // ~2.8 m/s — a believable 6 min/km jog.
-          latitude: 13.7563 + index * 0.000125,
-          longitude: 100.5018 + index * 0.00002,
-          timestamp: Date.now(),
-          accuracy: 6,
-        });
-        addSteps(index * MOCK_STEPS_PER_TICK);
-      }, MOCK_TICK_MS);
-      return;
-    }
 
     subscription.current = await Location.watchPositionAsync(LOCATION_OPTIONS, (loc) => {
       addPoint({

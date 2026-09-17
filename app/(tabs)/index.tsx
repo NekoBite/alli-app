@@ -14,8 +14,8 @@ import {
   Text,
 } from '@/components';
 import { useGardenStore } from '@/features/garden/store';
-import { weekGoals } from '@/features/run/goals';
-import { pointsToAlli, REWARD_RULES } from '@/features/run/rewards';
+import { questProgress, REWARD_RULES, starsToAlli, stepsToGo } from '@/features/run/rewards';
+import { shoeFor } from '@/features/run/shoes';
 import { useRunStore } from '@/features/run/store';
 import { useWalletStore } from '@/features/wallet/store';
 import { colors, spacing } from '@/theme';
@@ -43,10 +43,10 @@ export default function HomeScreen() {
     .sort((a, b) => a.msUntilHarvest - b.msUntilHarvest)[0];
 
   const alli = wallet.balanceOf('ALLI');
-  const capProgress = run.pointsEarnedToday / REWARD_RULES.dailyPointsCap;
   const canRun = run.canStart();
-  // The last bucket is today — steps are what the points came from.
-  const today = weekGoals(run.history).at(-1);
+  const shoe = shoeFor(run.profile.shoeTier);
+  const questDone = run.profile.starsEarnedToday > 0;
+  const questPays = REWARD_RULES.starsPerQuest * shoe.rewardMultiplier;
 
   return (
     <Screen
@@ -59,41 +59,36 @@ export default function HomeScreen() {
     >
       <View style={styles.hero}>
         <Text variant="label" color={colors.ink2}>
-          Redeemable points
+          Stars held
         </Text>
-        <Text variant="hero" color={colors.green}>
-          {formatPoints(run.pointsBalance)}
+        <Text variant="hero" color={colors.gold}>
+          {formatPoints(run.profile.starsBalance)}
         </Text>
         <Text variant="caption" color={colors.ink2}>
-          ≈ {formatToken(pointsToAlli(run.pointsBalance), 'ALLI')} ·{' '}
-          {REWARD_RULES.pointsPerAlli.toLocaleString()} points = 1 ALLI
+          ≈ {formatToken(starsToAlli(run.profile.starsBalance), 'ALLI')} · 1 star ={' '}
+          {formatToken(REWARD_RULES.alliPerStar, 'ALLI')}
         </Text>
       </View>
 
       <Card style={styles.block}>
         <View style={styles.rowBetween}>
-          <Text variant="heading">Today</Text>
+          <Text variant="heading">Today&apos;s quest</Text>
           <Pill
-            label={run.streakDays > 0 ? `${run.streakDays} day streak` : 'No streak'}
-            color={run.streakDays > 0 ? colors.green : colors.ink3}
+            label={questDone ? 'Complete' : `${shoe.name} · ${shoe.rewardMultiplier}×`}
+            color={questDone ? colors.green : colors.gold}
             dot
           />
         </View>
 
         <View style={styles.stats}>
-          <StatTile label="Earned" value={formatPoints(run.pointsEarnedToday)} unit="pts" />
           <StatTile
-            label="Multiplier"
-            value={`${run.multiplier.toFixed(2)}×`}
-            color={colors.cyan}
+            label="Steps"
+            value={formatPoints(run.profile.stepsToday)}
+            color={questDone ? colors.green : colors.ink}
           />
-        </View>
-
-        <View style={styles.stats}>
-          <StatTile label="Steps" value={formatPoints(today?.steps ?? 0)} />
           <StatTile
-            label="Stars"
-            value={run.entitlement.starsToday.toString()}
+            label="Stars today"
+            value={run.profile.starsEarnedToday.toString()}
             color={colors.gold}
           />
           <StatTile
@@ -103,10 +98,14 @@ export default function HomeScreen() {
           />
         </View>
 
-        <ProgressBar progress={capProgress} />
+        <ProgressBar
+          progress={questProgress(run.profile.stepsToday)}
+          color={questDone ? colors.green : colors.cyan}
+        />
         <Text variant="caption" color={colors.ink2}>
-          {formatPoints(Math.max(0, REWARD_RULES.dailyPointsCap - run.pointsEarnedToday))} of
-          today&apos;s {formatPoints(REWARD_RULES.dailyPointsCap)} point cap left
+          {questDone
+            ? `Quest complete — ${questPays} star${questPays === 1 ? '' : 's'} earned today.`
+            : `${formatPoints(stepsToGo(run.profile.stepsToday))} of today's ${formatPoints(REWARD_RULES.dailyStepGoal)} GPS-verified steps to go · pays ${questPays} star${questPays === 1 ? '' : 's'}`}
         </Text>
 
         <Button

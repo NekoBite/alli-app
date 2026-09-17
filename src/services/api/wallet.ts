@@ -41,7 +41,7 @@ const mock: WalletApi = {
         counterparty: '0x0000000000000000000000000000000000001111',
         status: 'confirmed',
         timestamp: Date.now() - 45 * MINUTE,
-        memo: 'Points redemption',
+        memo: 'Star exchange',
       },
       {
         hash: '0xb2c3d4e5f60718293a4b5c6d7e8f9012345678901234567890abcdef12345678',

@@ -1,7 +1,7 @@
 # Alli server — ALLI RUN rewards
 
 Fastify + Postgres backend for the ALLI RUN loop: identity, run validation, the
-points ledger, and ALLI redemption.
+daily quest, the star ledger, and the ALLI payout.
 
 It lives in this repo rather than its own for one reason. The reward rules are
 in `src/features/run/{geo,steps,rewards}.ts`, written as pure functions, and this
@@ -35,9 +35,10 @@ This is the whole point of the service, so it is worth being explicit.
 a client-generated run id, and the runner's local calendar day.
 
 **What the client does not send:** distance, moving time, rejected-fix count, the
-credited step count, points, stars, or the multiplier. Not because the app is
-polite about it — because there is nowhere in the request body to put them. The
-server recomputes all of it from `track` and `stepSamples`:
+credited step count, the day's running total, the shoe multiplier, or the stars.
+Not because the app is polite about it — because there is nowhere in the request
+body to put them. The server recomputes all of it from `track` and `stepSamples`,
+plus what it already knows about the account:
 
 ```
 POST /v1/run/runs
@@ -45,14 +46,20 @@ POST /v1/run/runs
   → creditStepSamples(track, samples)     pairs each pedometer window with the
                                           ground covered; a phone that did not
                                           move credits no steps
-  → calculateReward(stats, ctx)           pace bounds, stride check, daily cap,
-                                          and the star for a completed run
+  → the day's steps so far, under the row lock
+  → the account's shoe tier, from users.shoe_tier
+  → calculateReward(stats, ctx)           pace bounds, stride check, and the star
+                                          if the day crossed 6,000 steps
   → ledger entry, inside the same transaction as the run row
 ```
 
-`ctx` — points earned today, the streak multiplier — comes from the ledger, never
-from the request. A multiplier the phone can set is a multiplier the phone can
-set to 1000.
+The quest is a running total over the runner's local day. A star is booked once
+per day, against the run that crossed the line; every later run that day still
+banks its steps and pays nothing.
+
+`ctx` — the day's steps, whether it already paid, and the shoe tier — comes from
+the database, never from the request. A multiplier the phone can set is a
+multiplier the phone can set to 1000.
 
 ## Endpoints
 
@@ -63,63 +70,60 @@ POST /v1/auth/logout                                 → 204
 GET  /v1/auth/me                                     → user
 PUT  /v1/auth/wallet         { address }             → user
 
-GET  /v1/run/profile?day=YYYY-MM-DD → { pointsBalance, pointsEarnedToday, multiplier, streakDays }
+GET  /v1/run/profile?day=YYYY-MM-DD → { starsBalance, starsEarnedToday, stepsToday, streakDays, shoeTier }
 GET  /v1/run/runs                   → run history with reward breakdowns
 POST /v1/run/runs                   → the authoritative reward for one run
-POST /v1/run/redeem                 → { txHash, alli }
+POST /v1/run/stars/exchange         → { txHash, alli, starsBalance }
 ```
 
 `request-code` answers 204 for a new address, an existing one, and a rate-limited
 one alike. Distinguishing them would turn it into an account-existence oracle, so
 the "too many codes" case is swallowed there on purpose.
 
-The app also calls four run-economy endpoints that **this server does not
-implement yet** — run credits, stars and the membership that grants credits:
+The app also calls three credit endpoints that **this server does not implement
+yet** — run credits and the membership that grants them:
 
 ```
 GET  /v1/run/entitlement            → { runsLeft, runsThisMonth, extraRunsBoughtThisMonth,
-                                        stars, starsToday, membership, serverTime }
-POST /v1/run/credits       { runs }              → buy extra run credits
-POST /v1/run/stars/exchange { stars, toAddress } → burn stars, pay ALLI
-POST /v1/run/membership/renew                    → extend a month, grant its credits
+                                        membership, serverTime }
+POST /v1/run/credits       { runs } → buy extra run credits
+POST /v1/run/membership/renew       → extend a month, grant its credits
 ```
 
-They need a credit ledger and a star ledger shaped like `points_ledger`, the
-month bucket cut with this server's clock, and a USDT charge behind a purchase.
-`calculateReward` already returns the star a completed run earned; nothing
-stores it. The client treats a missing entitlement as non-fatal rather than
-showing a balance it made up.
+They need a credit ledger shaped like `star_ledger`, a membership row, the month
+bucket cut with this server's clock, and a USDT charge behind a purchase. The
+client treats a missing entitlement as non-fatal rather than showing a balance it
+made up.
 
 ## Correctness decisions worth knowing
 
 **The ledger is the truth.** Balance is `SUM(delta)`, not a column. A cached
-balance is faster and impossible to audit; here, "why do I have this many points"
+balance is faster and impossible to audit; here, "why do I have this many stars"
 always has a row-by-row answer.
 
-**The daily cap is held under a row lock.** `submitRun` takes `SELECT … FOR
-UPDATE` on the user before reading today's total. Without it, two runs uploaded
-at the same moment each read "0 earned today" and each award a full day's cap.
-There is a test for exactly this — ten concurrent submissions, total equals the
-cap.
+**The quest is held under a row lock.** `submitRun` takes `SELECT … FOR UPDATE`
+on the user before reading the day's step total. Without it, two runs uploaded at
+the same moment each read "no star yet today" and each pay one. There is a test
+for exactly this — ten quest-clearing submissions at once, one star out.
 
 **A retried upload credits once.** `runs (user_id, client_run_id)` is unique, and
 a duplicate submission returns the stored result instead of erroring, so the
-client's retry loop stays simple. Without this a flaky connection is a points
+client's retry loop stays simple. Without this a flaky connection is a star
 printer.
 
 **A rejected run is still recorded.** The run row is written with its flags and
 no ledger entry, so the user can see *why* they earned nothing rather than
 watching a run vanish.
 
-**Redemption debits before it pays, in two transactions.** The points come out
+**The exchange debits before it pays, in two transactions.** The stars come out
 and a `pending` redemption row is committed; only then is the transfer broadcast.
 The reverse order means a crash between the two pays out tokens the ledger never
 charged for. A crash in the current order leaves a `pending` row — recoverable,
 and visible to the reconciler query in `redemptions_pending_idx`.
 
-**Redemption refuses rather than fakes.** With no ALLI contract deployed,
-`assertRedemptionAvailable()` throws 503 *before* any points move. The user keeps
-their points and gets a straight answer.
+**The exchange refuses rather than fakes.** With no ALLI contract deployed,
+`assertRedemptionAvailable()` throws 503 *before* any stars move. The user keeps
+their stars and gets a straight answer.
 
 **Payout is a transfer, not a mint.** The relayer sends from a treasury float
 that has to be topped up. That caps the blast radius of a bug in the reward math
@@ -132,7 +136,7 @@ DATABASE_URL=postgres://... npm test --workspace server
 ```
 
 They run against real Postgres, not a mock. The behaviours worth testing here —
-concurrent cap enforcement, the unique index on retries, the refund path — are
+the once-a-day quest under concurrency, the unique index on retries, the refund path — are
 exactly the ones a fake database papers over. CI runs a `postgres:16` service for
 the same reason. Writing them this way caught a real bug before this shipped: a
 column referenced in the refund query that the schema did not have.
@@ -151,10 +155,11 @@ column referenced in the refund query that the schema did not have.
 - **No admin surface.** Reviewing outlier earners, disabling an account, issuing
   an adjustment — all currently manual SQL. `users.disabled_at` and the
   `adjustment` ledger reason exist for it.
-- **No run credits, stars or membership.** The four endpoints above answer
-  nothing. `calculateReward` already returns the star a completed run earned and
-  the run row stores it inside `reward`, but there is no star balance to spend,
-  no credit to charge a run against, and nothing that takes USDT for either.
-  This is the largest gap in the run loop.
-- **Garden multiplier is not wired in.** `streakMultiplier` is the only source of
-  bonus; planted trees are meant to contribute (see `docs/architecture.md`).
+- **No run credits or membership.** The three endpoints above answer nothing:
+  there is no credit to charge a run against and nothing that takes USDT for one.
+  This is the largest gap left in the run loop.
+- **Shoe tiers are stored, never sold.** `users.shoe_tier` defaults to Leather
+  and the server honours whatever it holds, but nothing mints or sells a Silver
+  or Gold NFT, so every account earns the 1× reward.
+- **Garden multiplier is not wired in.** Planted trees are meant to contribute to
+  the reward (see `docs/architecture.md`); nothing reads that bonus.

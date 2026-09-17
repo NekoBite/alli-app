@@ -68,12 +68,6 @@ export function creditSteps(windows: StepWindow[]): StepCredit {
   );
 }
 
-/** Progress towards a step goal, clamped to 0–1, for a progress bar. */
-export function goalProgress(steps: number, goalSteps: number): number {
-  if (goalSteps <= 0) return 1;
-  return Math.min(1, Math.max(0, steps / goalSteps));
-}
-
 /**
  * Re-credits a whole run from what the sensors actually reported: the raw
  * track, and the pedometer's running total at points in time.

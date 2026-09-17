@@ -3,20 +3,21 @@ import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Button, Card, Row, Screen, Text } from '@/components';
 import { REWARD_RULES, starsToAlli } from '@/features/run/rewards';
+import { shoeFor } from '@/features/run/shoes';
 import { useRunStore } from '@/features/run/store';
 import { useWalletStore } from '@/features/wallet/store';
 import { chain } from '@/services/chain';
 import { colors, radius, spacing, type } from '@/theme';
-import { formatToken, shortAddress } from '@/utils/format';
+import { formatPoints, formatToken, shortAddress } from '@/utils/format';
 
 export default function StarsScreen() {
-  const { entitlement, exchanging, exchangeStars } = useRunStore();
+  const { profile, exchanging, exchangeStars } = useRunStore();
   const account = useWalletStore((state) => state.account);
   const [amount, setAmount] = useState('');
 
   const parsed = Number(amount);
   const stars = Number.isInteger(parsed) ? parsed : NaN;
-  const valid = !Number.isNaN(stars) && stars > 0 && stars <= entitlement.stars;
+  const valid = !Number.isNaN(stars) && stars > 0 && stars <= profile.starsBalance;
 
   const exchange = async () => {
     if (!account) return;
@@ -36,10 +37,10 @@ export default function StarsScreen() {
           Stars
         </Text>
         <Text variant="hero" color={colors.gold}>
-          {entitlement.stars}
+          {profile.starsBalance}
         </Text>
         <Text variant="caption" color={colors.ink2}>
-          ≈ {formatToken(starsToAlli(entitlement.stars), 'ALLI')} · 1 star ={' '}
+          ≈ {formatToken(starsToAlli(profile.starsBalance), 'ALLI')} · 1 star ={' '}
           {formatToken(REWARD_RULES.alliPerStar, 'ALLI')}
         </Text>
       </View>
@@ -47,8 +48,9 @@ export default function StarsScreen() {
       <Card style={styles.card}>
         <Text variant="heading">Exchange stars for ALLI</Text>
         <Text variant="caption" color={colors.ink2}>
-          You earn one star per completed run — {REWARD_RULES.stepGoal} GPS-backed steps, with no
-          validation flags.
+          Stars come from the daily quest: {formatPoints(REWARD_RULES.dailyStepGoal)} GPS-verified
+          steps in a day pays {REWARD_RULES.starsPerQuest * shoeFor(profile.shoeTier).rewardMultiplier}{' '}
+          at your {shoeFor(profile.shoeTier).name} tier.
         </Text>
 
         <TextInput
@@ -62,11 +64,11 @@ export default function StarsScreen() {
         />
         <Row
           label="Available"
-          value={entitlement.stars.toString()}
+          value={profile.starsBalance.toString()}
           right={
             <Pressable
               accessibilityRole="button"
-              onPress={() => setAmount(String(entitlement.stars))}
+              onPress={() => setAmount(String(profile.starsBalance))}
               hitSlop={8}
             >
               <Text variant="bodyStrong" color={colors.green}>

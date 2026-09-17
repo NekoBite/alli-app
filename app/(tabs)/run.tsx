@@ -16,40 +16,33 @@ import {
 } from '@/components';
 import { RUN_CREDIT_RULES, remainingPurchasableRuns } from '@/features/run/credits';
 import { GOAL_RULES, weekGoals, weekTotals, type DayGoal } from '@/features/run/goals';
-import { pointsToAlli, REWARD_RULES } from '@/features/run/rewards';
-import { goalProgress } from '@/features/run/steps';
+import { questProgress, REWARD_RULES, starsToAlli, stepsToGo } from '@/features/run/rewards';
+import { SHOES, SHOE_ORDER, shoeFor } from '@/features/run/shoes';
 import { useRunStore } from '@/features/run/store';
 import type { RunSummary } from '@/features/run/types';
-import { useWalletStore } from '@/features/wallet/store';
 import { colors, radius, spacing } from '@/theme';
 import { formatDistance, formatDuration, formatPoints, formatToken } from '@/utils/format';
 import { formatServerTime, relativeTime } from '@/utils/time';
 
 export default function RunScreen() {
   const router = useRouter();
-  const {
-    history,
-    pointsBalance,
-    entitlement,
-    entitlementError,
-    redeeming,
-    redeemPoints,
-    refresh,
-    loading,
-    canStart,
-  } = useRunStore();
-  const account = useWalletStore((state) => state.account);
+  const { history, profile, entitlement, entitlementError, refresh, loading, canStart } =
+    useRunStore();
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const redeemable =
-    Math.floor(pointsBalance / REWARD_RULES.pointsPerAlli) * REWARD_RULES.pointsPerAlli;
   const start = canStart();
   const week = weekGoals(history);
   const totals = weekTotals(week);
   const buyableLeft = remainingPurchasableRuns(entitlement.extraRunsBoughtThisMonth);
+
+  const shoe = shoeFor(profile.shoeTier);
+  const questDone = profile.starsEarnedToday > 0;
+  const progress = questProgress(profile.stepsToday);
+  const toGo = stepsToGo(profile.stepsToday);
+  const questPays = REWARD_RULES.starsPerQuest * shoe.rewardMultiplier;
 
   return (
     <Screen scroll={false}>
@@ -63,30 +56,28 @@ export default function RunScreen() {
           <View style={styles.header}>
             <Card style={styles.card}>
               <View style={styles.rowBetween}>
-                <Text variant="heading">Run balance</Text>
+                <Text variant="heading">Today&apos;s quest</Text>
                 <Pill
-                  label={`${entitlement.runsLeft} run${entitlement.runsLeft === 1 ? '' : 's'} left`}
-                  color={entitlement.runsLeft > 0 ? colors.green : colors.warning}
+                  label={questDone ? 'Complete' : 'In progress'}
+                  color={questDone ? colors.green : colors.cyan}
                   dot
                 />
               </View>
 
-              <View style={styles.stats}>
-                <StatTile
-                  label="Stars today"
-                  value={entitlement.starsToday.toString()}
-                  color={colors.gold}
-                />
-                <StatTile label="This month" value={entitlement.runsThisMonth.toString()} />
-                <StatTile
-                  label="Runs left"
-                  value={entitlement.runsLeft.toString()}
-                  color={entitlement.runsLeft > 0 ? colors.ink : colors.warning}
-                />
+              <View style={styles.metricRow}>
+                <Text variant="title" color={questDone ? colors.green : colors.ink}>
+                  {formatPoints(profile.stepsToday)}
+                </Text>
+                <Text variant="body" color={colors.ink2}>
+                  of {formatPoints(REWARD_RULES.dailyStepGoal)} steps
+                </Text>
               </View>
+              <ProgressBar progress={progress} color={questDone ? colors.green : colors.cyan} />
 
-              <Text variant="caption" color={colors.ink3}>
-                Run credits never expire. Server time {formatServerTime(entitlement.serverTime)}.
+              <Text variant="caption" color={colors.ink2}>
+                {questDone
+                  ? `Quest complete — ${questPays} star${questPays === 1 ? '' : 's'} earned today. Steps from here count towards tomorrow.`
+                  : `${formatPoints(toGo)} GPS-verified steps to go. Completing pays ${questPays} star${questPays === 1 ? '' : 's'} at your ${shoe.name} tier.`}
               </Text>
 
               <Button
@@ -100,18 +91,34 @@ export default function RunScreen() {
                   {start.reason}
                 </Text>
               ) : null}
-              {entitlementError ? (
-                <Text variant="caption" color={colors.ink3}>
-                  Run credits could not be read ({entitlementError}). The server decides whether a
-                  run is recorded.
-                </Text>
-              ) : null}
             </Card>
 
             <Card style={styles.card}>
-              <Text variant="heading">Buy extra runs</Text>
+              <View style={styles.rowBetween}>
+                <Text variant="heading">Run balance</Text>
+                <Pill
+                  label={`${entitlement.runsLeft} run${entitlement.runsLeft === 1 ? '' : 's'} left`}
+                  color={entitlement.runsLeft > 0 ? colors.green : colors.warning}
+                  dot
+                />
+              </View>
+
+              <View style={styles.stats}>
+                <StatTile label="This month" value={entitlement.runsThisMonth.toString()} />
+                <StatTile
+                  label="Runs left"
+                  value={entitlement.runsLeft.toString()}
+                  color={entitlement.runsLeft > 0 ? colors.ink : colors.warning}
+                />
+                <StatTile label="Streak" value={`${profile.streakDays}d`} color={colors.cyan} />
+              </View>
+
+              <Text variant="caption" color={colors.ink3}>
+                One credit per recorded run · credits never expire · server time{' '}
+                {formatServerTime(entitlement.serverTime)}
+              </Text>
               <Text variant="caption" color={colors.ink2}>
-                {formatToken(RUN_CREDIT_RULES.extraRunPriceUsdt, 'USDT')} per run · bought{' '}
+                {formatToken(RUN_CREDIT_RULES.extraRunPriceUsdt, 'USDT')} per extra run · bought{' '}
                 {entitlement.extraRunsBoughtThisMonth}/{RUN_CREDIT_RULES.maxExtraRunsPerMonth} this
                 month
               </Text>
@@ -121,30 +128,55 @@ export default function RunScreen() {
                 disabled={buyableLeft === 0}
                 onPress={() => router.push('/run/credits')}
               />
+              {entitlementError ? (
+                <Text variant="caption" color={colors.ink3}>
+                  Run credits could not be read ({entitlementError}). The server decides whether a
+                  run is recorded.
+                </Text>
+              ) : null}
             </Card>
 
             <Card style={styles.card} tone="premium">
               <View style={styles.rowBetween}>
                 <Text variant="heading">Stars</Text>
                 <Text variant="title" color={colors.gold}>
-                  {entitlement.stars}
+                  {formatPoints(profile.starsBalance)}
                 </Text>
               </View>
               <Text variant="caption" color={colors.ink2}>
-                One star per completed run · 1 star ={' '}
+                ≈ {formatToken(starsToAlli(profile.starsBalance), 'ALLI')} · 1 star ={' '}
                 {formatToken(REWARD_RULES.alliPerStar, 'ALLI')}
               </Text>
               <Button
                 label="Exchange stars for ALLI"
                 variant="secondary"
-                disabled={entitlement.stars <= 0}
+                disabled={profile.starsBalance <= 0}
                 onPress={() => router.push('/run/stars')}
               />
             </Card>
 
             <SectionHeader
+              title="Your shoes"
+              subtitle={`${shoe.name} · ${shoe.rewardMultiplier}× the daily reward`}
+            />
+            <Card style={styles.card}>
+              {SHOE_ORDER.map((tier) => (
+                <Row
+                  key={tier}
+                  label={SHOES[tier].name}
+                  value={`${SHOES[tier].rewardMultiplier}× · ${REWARD_RULES.starsPerQuest * SHOES[tier].rewardMultiplier} ★/day`}
+                  valueColor={tier === shoe.tier ? colors.gold : colors.ink2}
+                  emphasis={tier === shoe.tier}
+                />
+              ))}
+              <Text variant="caption" color={colors.ink3}>
+                {shoe.blurb} Upgrading is not built yet — the tier is issued and held server-side.
+              </Text>
+            </Card>
+
+            <SectionHeader
               title="This week"
-              subtitle={`${totals.goalDays} of ${GOAL_RULES.weekDays} days completed`}
+              subtitle={`${totals.questDays} of ${GOAL_RULES.weekDays} quests completed`}
             />
             <Card style={styles.card}>
               <View style={styles.week}>
@@ -153,8 +185,8 @@ export default function RunScreen() {
                 ))}
               </View>
               <View style={styles.stats}>
-                <StatTile label="Distance" value={formatDistance(totals.metres)} unit="km" />
                 <StatTile label="Steps" value={formatPoints(totals.steps)} />
+                <StatTile label="Distance" value={formatDistance(totals.metres)} unit="km" />
               </View>
               <View style={styles.stats}>
                 <StatTile
@@ -165,30 +197,6 @@ export default function RunScreen() {
               </View>
             </Card>
 
-            <SectionHeader
-              title="Points"
-              subtitle={`${REWARD_RULES.pointsPerThousandSteps} per 1,000 GPS-backed steps`}
-            />
-            <Card style={styles.card}>
-              <Text variant="title" color={colors.green}>
-                {formatPoints(pointsBalance)}
-              </Text>
-              <Text variant="caption" color={colors.ink2}>
-                {redeemable > 0
-                  ? `Redeem ${formatPoints(redeemable)} points for ${formatToken(pointsToAlli(redeemable), 'ALLI')}`
-                  : `Earn ${formatPoints(REWARD_RULES.pointsPerAlli - pointsBalance)} more points to redeem 1 ALLI`}
-              </Text>
-              <Button
-                label="Redeem for ALLI"
-                variant="secondary"
-                // Redemption is an on-chain payout; without an address there
-                // is nowhere for it to land.
-                disabled={redeemable <= 0 || !account}
-                loading={redeeming}
-                onPress={() => account && void redeemPoints(redeemable, account.address)}
-              />
-            </Card>
-
             <Text variant="heading" style={styles.sectionTitle}>
               Recent runs
             </Text>
@@ -197,7 +205,7 @@ export default function RunScreen() {
         ListEmptyComponent={
           <EmptyState
             title="No runs yet"
-            body="Your finished runs show up here with the points and stars they earned, and why."
+            body="Your finished runs show up here with the steps they added to the quest, and why."
           />
         }
         renderItem={({ item }) => <RunRow run={item} />}
@@ -207,14 +215,14 @@ export default function RunScreen() {
   );
 }
 
-/** One day in the week strip: a step-goal bar, its weekday, today picked out. */
+/** One day in the week strip: quest progress, its weekday, today picked out. */
 function DayColumn({ day }: { day: DayGoal }) {
   return (
     <View style={styles.day}>
       <View style={styles.dayBar}>
         <ProgressBar
-          progress={goalProgress(day.steps, GOAL_RULES.dailyStepGoal)}
-          color={day.goalMet ? colors.green : colors.cyan}
+          progress={Math.min(1, day.steps / GOAL_RULES.dailyStepGoal)}
+          color={day.questMet ? colors.green : colors.cyan}
           height={6}
         />
       </View>
@@ -226,29 +234,29 @@ function DayColumn({ day }: { day: DayGoal }) {
 }
 
 function RunRow({ run }: { run: RunSummary }) {
-  const rejected = run.reward.points === 0 && run.reward.stars === 0;
+  const counted = run.reward.eligibleSteps > 0;
 
   return (
-    <Card style={styles.runCard} tone={rejected ? 'muted' : 'default'}>
+    <Card style={styles.runCard} tone={counted ? 'default' : 'muted'}>
       <View style={styles.runHead}>
         <Text variant="caption" color={colors.ink2}>
           {relativeTime(run.startedAt)}
         </Text>
         <View style={styles.pills}>
           {run.reward.stars > 0 ? (
-            <Pill label={`+${run.reward.stars} star`} color={colors.gold} />
+            <Pill label={`+${run.reward.stars} ★`} color={colors.gold} />
           ) : null}
-          {rejected ? (
-            <Pill label="Not counted" color={colors.warning} />
+          {counted ? (
+            <Pill label={`+${formatPoints(run.reward.eligibleSteps)} steps`} color={colors.green} />
           ) : (
-            <Pill label={`+${formatPoints(run.reward.points)} pts`} color={colors.green} />
+            <Pill label="Not counted" color={colors.warning} />
           )}
         </View>
       </View>
 
       <View style={styles.runStats}>
-        <StatTile label="Distance" value={formatDistance(run.distanceMetres)} unit="km" />
         <StatTile label="Steps" value={formatPoints(run.reward.steps)} />
+        <StatTile label="Distance" value={formatDistance(run.distanceMetres)} unit="km" />
         <StatTile label="Moving" value={formatDuration(run.movingSeconds)} />
       </View>
 
@@ -264,6 +272,7 @@ const styles = StyleSheet.create({
   header: { gap: spacing.lg, paddingTop: spacing.lg },
   card: { gap: spacing.sm },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  metricRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
   stats: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.xs },
   week: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' },
   day: { flex: 1, alignItems: 'center', gap: spacing.xs },
