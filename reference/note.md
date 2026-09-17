@@ -1,0 +1,1 @@
+Previous application 'AURA RUN' contains suitable features for ALLI RUN campaigns. In this folder, you will find UI design of AURA RUN and other applications that we'd like to implement similar UI on ALLI APP.
