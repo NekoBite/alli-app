@@ -14,8 +14,8 @@ import {
   submitRun,
 } from './service.ts';
 
-export async function joggingRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/v1/jogging/profile', {
+export async function runRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/v1/run/profile', {
     preHandler: requireUser,
     handler: async (request) => {
       const { day } = DayQuerySchema.parse(request.query);
@@ -23,12 +23,12 @@ export async function joggingRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.get('/v1/jogging/runs', {
+  app.get('/v1/run/runs', {
     preHandler: requireUser,
     handler: async (request) => listRuns(currentUser(request).id),
   });
 
-  app.post('/v1/jogging/runs', {
+  app.post('/v1/run/runs', {
     preHandler: requireUser,
     config: { rateLimit: { max: 60, timeWindow: '1 hour' } },
     handler: async (request) => {
@@ -47,7 +47,7 @@ export async function joggingRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.post('/v1/jogging/redeem', {
+  app.post('/v1/run/redeem', {
     preHandler: requireUser,
     config: { rateLimit: { max: 10, timeWindow: '1 hour' } },
     handler: async (request) => {

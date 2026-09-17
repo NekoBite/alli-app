@@ -1,5 +1,5 @@
 import { averageSpeed } from './geo';
-import type { JogSession, RewardBreakdown, RewardFlag } from './types';
+import type { RunSession, RewardBreakdown, RewardFlag } from './types';
 
 /**
  * Reward rules.
@@ -9,6 +9,15 @@ import type { JogSession, RewardBreakdown, RewardFlag } from './types';
  * result immediately. A client-side figure is a preview, never a credit — the
  * server re-runs this on the raw track before any ALLI moves. Never award from
  * the client alone; a value the phone can edit is a value the phone can mint.
+ *
+ * Two currencies come out of one run, and they are bounded differently:
+ *
+ * - **Points** accrue per validated kilometre and are bounded by a daily cap.
+ * - **Stars** are paid once per *completed* run, and are bounded by run
+ *   credits, which are bought (see `credits.ts`). One star is worth far more
+ *   ALLI than a day of points; that is only coherent because a star costs a run
+ *   credit and a run credit costs USDT. See docs/architecture.md §4 — neither
+ *   number is a balanced economy yet.
  */
 export const REWARD_RULES = {
   /** Points per kilometre of validated distance. */
@@ -33,6 +42,20 @@ export const REWARD_RULES = {
   maxMetresPerStep: 2.5,
   /** Points required for one ALLI. */
   pointsPerAlli: 1_000,
+
+  /**
+   * GPS-backed steps that complete a run. Below this the run still earns
+   * points for the distance it covered, but pays no star.
+   *
+   * 200 steps is around 150 m, so in practice `minDistanceMetres` binds first:
+   * a run has to be clean *and* long enough to pass validation before the goal
+   * can pay anything.
+   */
+  stepGoal: 200,
+  /** Stars paid by one completed run. */
+  starsPerCompletedRun: 1,
+  /** ALLI one star exchanges for. */
+  alliPerStar: 1_000,
 } as const;
 
 export type RewardContext = {
@@ -48,11 +71,15 @@ export type RewardContext = {
 };
 
 /**
- * Turns a finished run into points. Pure: no clock, no network, no storage —
- * which is what lets the server run the identical function on the raw track.
+ * Turns a finished run into points and stars. Pure: no clock, no network, no
+ * storage — which is what lets the server run the identical function on the raw
+ * track.
+ *
+ * `steps` must already be GPS-credited (`creditSteps` in `steps.ts`); a raw
+ * pedometer count passed in here would let a shaken phone complete a run.
  */
 export function calculateReward(
-  session: Pick<JogSession, 'distanceMetres' | 'movingSeconds' | 'track' | 'steps'>,
+  session: Pick<RunSession, 'distanceMetres' | 'movingSeconds' | 'track' | 'steps'>,
   context: RewardContext,
 ): RewardBreakdown {
   const flags: RewardFlag[] = [];
@@ -89,7 +116,25 @@ export function calculateReward(
   const points = Math.min(grossPoints, remainingToday);
   if (grossPoints > points) flags.push('daily-cap-reached');
 
-  return { eligibleMetres, basePoints, multiplier, grossPoints, points, flags };
+  // The star is the completion reward: the step goal has to be met *and* the
+  // run has to be clean. Hitting the daily point cap does not cost the star —
+  // the cap bounds points, and stars are bounded by run credits instead.
+  const creditedSteps = Math.max(0, Math.floor(steps ?? 0));
+  const blocking = flags.filter((flag) => flag !== 'daily-cap-reached');
+  const goalReached = creditedSteps >= REWARD_RULES.stepGoal;
+  const stars = goalReached && blocking.length === 0 ? REWARD_RULES.starsPerCompletedRun : 0;
+
+  return {
+    eligibleMetres,
+    basePoints,
+    multiplier,
+    grossPoints,
+    points,
+    steps: creditedSteps,
+    goalReached,
+    stars,
+    flags,
+  };
 }
 
 /** Points -> ALLI, at the fixed conversion rate. */
@@ -99,6 +144,11 @@ export function pointsToAlli(points: number): number {
 
 export function alliToPoints(alli: number): number {
   return Math.ceil(alli * REWARD_RULES.pointsPerAlli);
+}
+
+/** Stars -> ALLI, at the fixed exchange rate. */
+export function starsToAlli(stars: number): number {
+  return stars * REWARD_RULES.alliPerStar;
 }
 
 /** User-facing copy for a flag. Shown on the run summary so rejection is never silent. */

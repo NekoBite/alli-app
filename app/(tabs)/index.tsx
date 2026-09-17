@@ -14,8 +14,8 @@ import {
   Text,
 } from '@/components';
 import { useGardenStore } from '@/features/garden/store';
-import { useJoggingStore } from '@/features/jogging/store';
-import { pointsToAlli, REWARD_RULES } from '@/features/jogging/rewards';
+import { useRunStore } from '@/features/run/store';
+import { pointsToAlli, REWARD_RULES } from '@/features/run/rewards';
 import { useWalletStore } from '@/features/wallet/store';
 import { colors, spacing } from '@/theme';
 import { formatFiat, formatPoints, formatToken } from '@/utils/format';
@@ -23,12 +23,12 @@ import { countdown } from '@/utils/time';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const jogging = useJoggingStore();
+  const run = useRunStore();
   const garden = useGardenStore();
   const wallet = useWalletStore();
 
   useEffect(() => {
-    void jogging.refresh();
+    void run.refresh();
     void garden.refresh();
     void wallet.load();
     // Run once on mount; each store guards its own refresh.
@@ -42,26 +42,27 @@ export default function HomeScreen() {
     .sort((a, b) => a.msUntilHarvest - b.msUntilHarvest)[0];
 
   const alli = wallet.balanceOf('ALLI');
-  const capProgress = jogging.pointsEarnedToday / REWARD_RULES.dailyPointsCap;
+  const capProgress = run.pointsEarnedToday / REWARD_RULES.dailyPointsCap;
+  const canRun = run.canStart();
 
   return (
     <Screen
       onRefresh={() => {
-        void jogging.refresh();
+        void run.refresh();
         void garden.refresh();
         void wallet.refreshBalances();
       }}
-      refreshing={jogging.loading}
+      refreshing={run.loading}
     >
       <View style={styles.hero}>
         <Text variant="label" color={colors.ink2}>
           Redeemable points
         </Text>
         <Text variant="hero" color={colors.green}>
-          {formatPoints(jogging.pointsBalance)}
+          {formatPoints(run.pointsBalance)}
         </Text>
         <Text variant="caption" color={colors.ink2}>
-          ≈ {formatToken(pointsToAlli(jogging.pointsBalance), 'ALLI')} ·{' '}
+          ≈ {formatToken(pointsToAlli(run.pointsBalance), 'ALLI')} ·{' '}
           {REWARD_RULES.pointsPerAlli.toLocaleString()} points = 1 ALLI
         </Text>
       </View>
@@ -70,28 +71,51 @@ export default function HomeScreen() {
         <View style={styles.rowBetween}>
           <Text variant="heading">Today</Text>
           <Pill
-            label={jogging.streakDays > 0 ? `${jogging.streakDays} day streak` : 'No streak'}
-            color={jogging.streakDays > 0 ? colors.green : colors.ink3}
+            label={run.streakDays > 0 ? `${run.streakDays} day streak` : 'No streak'}
+            color={run.streakDays > 0 ? colors.green : colors.ink3}
             dot
           />
         </View>
 
         <View style={styles.stats}>
-          <StatTile label="Earned" value={formatPoints(jogging.pointsEarnedToday)} unit="pts" />
+          <StatTile label="Earned" value={formatPoints(run.pointsEarnedToday)} unit="pts" />
           <StatTile
             label="Multiplier"
-            value={`${jogging.multiplier.toFixed(2)}×`}
+            value={`${run.multiplier.toFixed(2)}×`}
             color={colors.cyan}
+          />
+        </View>
+
+        <View style={styles.stats}>
+          <StatTile
+            label="Stars today"
+            value={run.entitlement.starsToday.toString()}
+            color={colors.gold}
+          />
+          <StatTile
+            label="Runs left"
+            value={run.entitlement.runsLeft.toString()}
+            color={run.entitlement.runsLeft > 0 ? colors.ink : colors.warning}
           />
         </View>
 
         <ProgressBar progress={capProgress} />
         <Text variant="caption" color={colors.ink2}>
-          {formatPoints(Math.max(0, REWARD_RULES.dailyPointsCap - jogging.pointsEarnedToday))} of
+          {formatPoints(Math.max(0, REWARD_RULES.dailyPointsCap - run.pointsEarnedToday))} of
           today&apos;s {formatPoints(REWARD_RULES.dailyPointsCap)} point cap left
         </Text>
 
-        <Button label="Start a run" onPress={() => router.push('/jog/active')} size="lg" />
+        <Button
+          label="Start a run"
+          onPress={() => router.push('/run/active')}
+          size="lg"
+          disabled={!canRun.ok}
+        />
+        {canRun.reason ? (
+          <Text variant="caption" color={colors.warning}>
+            {canRun.reason}
+          </Text>
+        ) : null}
       </Card>
 
       <SectionHeader

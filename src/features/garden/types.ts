@@ -17,8 +17,8 @@ export type Seed = {
   yieldAlli: number;
   /** Harvests before the tree is spent. */
   harvestsTotal: number;
-  /** Bonus applied to jogging points while this tree is alive, e.g. 0.05 = +5%. */
-  joggingBonus: number;
+  /** Bonus applied to run points while this tree is alive, e.g. 0.05 = +5%. */
+  runBonus: number;
   blurb: string;
 };
 

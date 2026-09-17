@@ -4,7 +4,9 @@
 
 React Native (Expo SDK 57) app for Android and iOS. Four features:
 
-1. **Jogging** — GPS-tracked runs that earn points, redeemable for **ALLI** on BNB Smart Chain.
+1. **ALLI RUN** — GPS-tracked runs that earn points and stars, redeemable for **ALLI** on BNB
+   Smart Chain. Each run spends a run credit; credits come from a monthly membership or are
+   bought outright.
 2. **Garden** — plant seeds bought with ALLI, or premium seeds bought with BSC **USDT** for a
    higher yield and a larger run bonus.
 3. **Marketplace** — physical goods paid for in ALLI or USDT.
@@ -22,7 +24,10 @@ npm start          # then press a (Android) / i (iOS), or scan with Expo Go
 ```
 
 It runs with no backend and no chain: `EXPO_PUBLIC_DATA_SOURCE` defaults to `mock`, and the run
-screen synthesises a plausible GPS track so the flow works on a simulator.
+screen synthesises a plausible GPS track and step count so the flow works on a simulator — give it
+about two minutes and the run earns points and a star. Set
+`EXPO_PUBLIC_MOCK_SENSORS=off` to use the real sensors while the API stays mocked — that is the
+combination you want when testing a run on a device.
 
 ```bash
 npm run typecheck  # tsc --noEmit
@@ -51,8 +56,9 @@ npx eas build -p android     # or use EAS (run `eas init` first)
 ```
 app/                       expo-router routes (the file tree IS the navigation)
   _layout.tsx              root stack + polyfills
-  (tabs)/                  Today · Run · Garden · Market · Wallet
-  jog/active|summary       live run, then the reward breakdown
+  (tabs)/                  Today · ALLI RUN · Garden · Market · Wallet
+  run/active|summary       live run, then the reward breakdown
+  run/credits|stars        buy run credits, renew membership, exchange stars
   garden/shop, plot/[id]   seed shop and per-tree detail
   market/product/[id], cart, checkout
   wallet/send|receive|card
@@ -61,7 +67,8 @@ src/
   components/              UI primitives (Screen, Button, Card, StatTile, …)
   config/env.ts            typed EXPO_PUBLIC_* access
   features/
-    jogging/               geo filtering, reward rules, live-session hook, store
+    run/                   geo filtering, step credit, reward rules, credits,
+                           goals, draft, live-session hook, store
     garden/                seed catalogue, growth math, store
     market/                product catalogue, cart, orders
     wallet/                balances, transfers, card state
@@ -76,8 +83,9 @@ Two conventions worth keeping:
 
 - **Screens never import `ethers` or `fetch` directly.** They go through `src/services`, which is
   why every screen renders with no network.
-- **Domain math is pure and tested.** `rewards.ts`, `geo.ts` and `growth.ts` take values and return
-  values — no clock, no storage, no network — so the backend can run the identical functions.
+- **Domain math is pure and tested.** `rewards.ts`, `geo.ts`, `steps.ts` and `growth.ts` take values
+  and return values — no clock, no storage, no network — so the backend can run the identical
+  functions.
 
 ## Configuration
 
@@ -91,16 +99,29 @@ binary and is public** — no secrets, ever.
 | `EXPO_PUBLIC_BSC_RPC_URL` | Override the default RPC — use a dedicated node in production |
 | `EXPO_PUBLIC_ALLI_ADDRESS` | ALLI BEP-20 address, blank until deployed |
 | `EXPO_PUBLIC_DATA_SOURCE` | `mock` (default) or `live` |
+| `EXPO_PUBLIC_MOCK_SENSORS` | `on` (default under `mock`) or `off` — synthesised GPS and steps |
 
 ## The economics, in one place
 
-Every tunable number lives in two files: `src/features/jogging/rewards.ts` (`REWARD_RULES`) and
-`src/features/garden/catalog.ts` (`SEEDS`). The values there are placeholders that make the UI
-legible — **they are not a balanced economy.** Before launch they belong on the server so they can
-be tuned without an app release. See [docs/architecture.md](docs/architecture.md)
-for the emission model and the sinks that have to absorb it.
+Every tunable number lives in three files: `src/features/run/rewards.ts` (`REWARD_RULES`),
+`src/features/run/credits.ts` (`RUN_CREDIT_RULES`) and `src/features/garden/catalog.ts` (`SEEDS`).
+The values there are placeholders that make the UI legible — **they are not a balanced economy.**
+Before launch they belong on the server so they can be tuned without an app release. See
+[docs/architecture.md](docs/architecture.md) for the emission model and the sinks that have to
+absorb it.
 
-Current placeholders: 100 points per validated km, 1,000 points = 1 ALLI, 1,000 points/day cap.
+A run pays in two currencies, bounded differently:
+
+- **Points**, per validated kilometre, bounded by a daily cap. 100 points/km, 1,000 points = 1 ALLI,
+  1,000 points/day.
+- **Stars**, one per *completed* run — 200 GPS-backed steps with no validation flags — bounded by
+  run credits rather than by a cap. 1 star = 1,000 ALLI.
+
+A run credit is the right to record one run. A membership grants 30 a month for 25 USDT, and extra
+credits cost the same per run, up to 300 a month. Credits never expire. That is what bounds star
+emission: a star is only worth more ALLI than a day of running because the run it came from cost
+money. **Both halves are placeholders, and the two scales have not been reconciled** — see
+[docs/architecture.md](docs/architecture.md) §4 before shipping either.
 
 ## What is deliberately not built
 
@@ -130,19 +151,32 @@ BSC RPC today. Only signing is stubbed.
 preview, never a credit.** The backend must re-run the same function on the raw track before ALLI
 moves. A value the phone can edit is a value the phone can mint.
 
-The client-side anti-cheat (`REWARD_RULES` + `summarizeTrack`) filters poor GPS, implausible
-hops, vehicle-speed runs and stride lengths that do not match the step count. It raises the cost of
-faking a run; it does not prevent it. Real defence is server-side: device attestation
-(Play Integrity / App Attest), per-account rate limits, route plausibility, and manual review of
-outliers.
+The client-side anti-cheat (`REWARD_RULES` + `summarizeTrack` + `creditStepSamples`) filters poor
+GPS, implausible hops, vehicle-speed runs, stride lengths that do not match the step count, and
+steps no GPS movement backs up. It raises the cost of faking a run; it does not prevent it. Real
+defence is server-side: device attestation (Play Integrity / App Attest), per-account rate limits,
+route plausibility, and manual review of outliers.
 
-### 3. Background location
+The server already re-runs all of it. A run is uploaded as a raw track plus the pedometer's raw
+totals, and **no credited number is accepted from the phone** — distance, moving time, steps,
+points and stars are all recomputed in `server/src/run/service.ts`.
 
-`useJogSession` subscribes in the foreground only. iOS suspends the app when the screen locks and
+### 3. Run credits, stars and membership, server-side
+
+The client half is built: `GET /v1/run/entitlement`, `POST /v1/run/credits`,
+`POST /v1/run/stars/exchange` and `POST /v1/run/membership/renew` are defined in
+`src/services/api/run.ts` with working mocks. The server implements none of them yet — there is no
+credit ledger, no star ledger and no membership table, and nothing charges USDT for a purchase.
+Until those exist the app reads an entitlement it cannot get, treats the failure as non-fatal, and
+lets the server be the one to refuse a run.
+
+### 4. Background location
+
+`useRunSession` subscribes in the foreground only. iOS suspends the app when the screen locks and
 the track ends mid-run. Shipping needs `expo-task-manager` with a foreground service on Android
 and a background-location task on iOS — both already declared in `app.json`.
 
-### 4. Card issuing
+### 5. Card issuing
 
 Alli never issues a card. A licensed issuer or BIN sponsor runs KYC, holds the fiat float and owns
 the PAN. This app shows status and sends instructions through the backend, so the issuer's API key
@@ -150,14 +184,14 @@ is never in the bundle. `last4` is the most card data this codebase should ever 
 never touch it. `src/services/api/card.ts` is shaped for that split — swap the endpoints for the
 chosen partner's.
 
-### 5. Token and contracts
+### 6. Token and contracts
 
 ALLI is not deployed. `src/services/chain/config.ts` carries a `placeholder: true` marker and the
 app falls back to mock balances while the address is unset. `REWARD_CLAIM_ABI` sketches the
 signed-voucher claim (server signs amount + nonce + deadline, contract verifies) but the contract
 is unwritten and unaudited.
 
-### 6. Smaller gaps
+### 7. Smaller gaps
 
 - **Auth** — no sign-in. `request()` reads a bearer token from `SECURE_KEYS.session`; nothing
   writes it yet.
@@ -165,6 +199,9 @@ is unwritten and unaudited.
   the files land in `assets/fonts`.
 - **Icons** — tab bar uses two-letter placeholder glyphs.
 - **Maps** — no route map on the run screen; the track is recorded but not drawn.
+- **Run drafts** — an in-progress run is written to AsyncStorage every 10 s so it can be picked up
+  later. A long track is megabytes of JSON, which AsyncStorage is not built for; move it to SQLite
+  before background location ships.
 - **QR** — the receive screen has a placeholder square; add `react-native-qrcode-svg`.
 - **Light theme** — dark-only. The token shape in `src/theme/colors.ts` takes a second palette.
 - **i18n** — strings are inline English. The web properties already ship EN/TH/ZH.

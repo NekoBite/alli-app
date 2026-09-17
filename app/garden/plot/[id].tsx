@@ -84,7 +84,7 @@ export default function PlotScreen() {
           <StatTile label="Harvests left" value={String(view.harvestsRemaining)} />
           <StatTile
             label="Run bonus"
-            value={`+${(view.seed.joggingBonus * 100).toFixed(0)}%`}
+            value={`+${(view.seed.runBonus * 100).toFixed(0)}%`}
             color={colors.cyan}
           />
         </View>

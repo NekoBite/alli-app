@@ -18,8 +18,8 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Alli uses your location to measure the distance and pace of your jog so it can award points.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Alli keeps measuring your jog while the app is in the background so your run is not cut short when the screen locks.",
+        "NSLocationWhenInUseUsageDescription": "Alli uses your location to measure the distance and pace of your run so it can award points.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Alli keeps measuring your run while the app is in the background so your run is not cut short when the screen locks.",
         "NSMotionUsageDescription": "Alli reads step count to cross-check GPS distance and filter out fake runs.",
         "UIBackgroundModes": [
           "location"
@@ -48,9 +48,15 @@
       "expo-router",
       "expo-secure-store",
       [
+        "expo-sensors",
+        {
+          "motionPermission": "Alli reads step count to cross-check GPS distance and filter out fake runs."
+        }
+      ],
+      [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Alli uses your location to measure the distance and pace of your jog so it can award points.",
+          "locationAlwaysAndWhenInUsePermission": "Alli uses your location to measure the distance and pace of your run so it can award points.",
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
         }

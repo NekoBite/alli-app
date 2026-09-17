@@ -21,8 +21,13 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="jog/active" options={{ title: 'Run', headerBackVisible: false }} />
-        <Stack.Screen name="jog/summary" options={{ title: 'Run summary' }} />
+        <Stack.Screen
+          name="run/active"
+          options={{ title: 'Active run', headerBackVisible: false }}
+        />
+        <Stack.Screen name="run/summary" options={{ title: 'Run summary' }} />
+        <Stack.Screen name="run/credits" options={{ title: 'Run credits' }} />
+        <Stack.Screen name="run/stars" options={{ title: 'Stars' }} />
         <Stack.Screen name="garden/shop" options={{ title: 'Seed shop' }} />
         <Stack.Screen name="garden/plot/[id]" options={{ title: 'Tree' }} />
         <Stack.Screen name="market/product/[id]" options={{ title: 'Product' }} />

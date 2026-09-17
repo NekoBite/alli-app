@@ -1,9 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
-import { Button, Card, EmptyState, Row, Screen, StatTile, Text } from '@/components';
-import { explainFlag, pointsToAlli } from '@/features/jogging/rewards';
-import { useJoggingStore } from '@/features/jogging/store';
+import { Button, Card, EmptyState, Pill, Row, Screen, StatTile, Text } from '@/components';
+import { explainFlag, pointsToAlli, REWARD_RULES, starsToAlli } from '@/features/run/rewards';
+import { useRunStore } from '@/features/run/store';
 import { colors, spacing } from '@/theme';
 import {
   formatDistance,
@@ -12,12 +12,12 @@ import {
   formatPoints,
   formatToken,
 } from '@/utils/format';
-import { averageSpeed } from '@/features/jogging/geo';
+import { averageSpeed } from '@/features/run/geo';
 
 export default function RunSummaryScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const run = useJoggingStore((state) => state.history.find((item) => item.id === id));
+  const run = useRunStore((state) => state.history.find((item) => item.id === id));
 
   if (!run) {
     return (
@@ -26,7 +26,7 @@ export default function RunSummaryScreen() {
           title="Run not found"
           body="This run is no longer in your history."
           actionLabel="Back to runs"
-          onAction={() => router.replace('/(tabs)/jog')}
+          onAction={() => router.replace('/(tabs)/run')}
         />
       </Screen>
     );
@@ -49,6 +49,9 @@ export default function RunSummaryScreen() {
             ≈ {formatToken(pointsToAlli(reward.points), 'ALLI')} once redeemed
           </Text>
         ) : null}
+        {reward.stars > 0 ? (
+          <Pill label={`+${reward.stars} star · ${formatToken(starsToAlli(reward.stars), 'ALLI')}`} color={colors.gold} />
+        ) : null}
       </View>
 
       <Card style={styles.card}>
@@ -61,6 +64,23 @@ export default function RunSummaryScreen() {
             unit="/km"
           />
         </View>
+      </Card>
+
+      <Card style={styles.card} tone={reward.goalReached ? 'premium' : 'muted'}>
+        <Text variant="heading">{reward.goalReached ? 'Run complete' : 'Run not completed'}</Text>
+        <Row label="Steps counted" value={formatPoints(reward.steps)} />
+        <Row label="Step goal" value={formatPoints(REWARD_RULES.stepGoal)} />
+        <Row
+          label="Stars awarded"
+          value={reward.stars.toString()}
+          valueColor={reward.stars > 0 ? colors.gold : colors.ink2}
+          emphasis
+        />
+        <Text variant="caption" color={colors.ink2}>
+          {reward.goalReached
+            ? 'Only steps backed by GPS movement counted towards the goal.'
+            : `A run pays a star once ${formatPoints(REWARD_RULES.stepGoal)} GPS-backed steps are recorded. The distance still earned points.`}
+        </Text>
       </Card>
 
       <Card style={styles.card} tone="muted">
@@ -91,12 +111,20 @@ export default function RunSummaryScreen() {
       ) : null}
 
       <View style={styles.actions}>
-        <Button label="Done" size="lg" onPress={() => router.replace('/(tabs)/jog')} />
-        <Button
-          label="Go to wallet"
-          variant="secondary"
-          onPress={() => router.replace('/(tabs)/wallet')}
-        />
+        <Button label="Done" size="lg" onPress={() => router.replace('/(tabs)/run')} />
+        {reward.stars > 0 ? (
+          <Button
+            label="Exchange stars"
+            variant="secondary"
+            onPress={() => router.replace('/run/stars')}
+          />
+        ) : (
+          <Button
+            label="Go to wallet"
+            variant="secondary"
+            onPress={() => router.replace('/(tabs)/wallet')}
+          />
+        )}
       </View>
     </Screen>
   );

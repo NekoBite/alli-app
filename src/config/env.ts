@@ -13,6 +13,7 @@ function str(value: string | undefined, fallback: string): string {
 
 const network = str(process.env.EXPO_PUBLIC_CHAIN, 'testnet') as Network;
 const dataSource = str(process.env.EXPO_PUBLIC_DATA_SOURCE, 'mock') as DataSource;
+const mockSensors = str(process.env.EXPO_PUBLIC_MOCK_SENSORS, dataSource === 'live' ? 'off' : 'on');
 
 export const env = {
   apiUrl: str(process.env.EXPO_PUBLIC_API_URL, 'https://api.trilumi.xyz'),
@@ -24,6 +25,14 @@ export const env = {
    * That is the default so the scaffold is runnable on day one.
    */
   dataSource: dataSource === 'live' ? 'live' : 'mock',
+  /**
+   * Synthesise GPS and pedometer data instead of reading the sensors. Separate
+   * from `dataSource` on purpose: real sensors against the mock API is what you
+   * want when testing a run on a device before the backend is ready, and one
+   * flag for both made that combination unreachable.
+   */
+  mockSensors: mockSensors !== 'off',
 } as const;
 
 export const isMock = env.dataSource === 'mock';
+export const useMockSensors = env.mockSensors;

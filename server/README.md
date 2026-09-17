@@ -1,11 +1,11 @@
-# Alli server — jogging rewards
+# Alli server — ALLI RUN rewards
 
-Fastify + Postgres backend for the jogging loop: identity, run validation, the
+Fastify + Postgres backend for the ALLI RUN loop: identity, run validation, the
 points ledger, and ALLI redemption.
 
 It lives in this repo rather than its own for one reason. The reward rules are
-in `src/features/jogging/{geo,rewards}.ts`, written as pure functions, and this
-server imports **those exact modules** through `src/shared/jogging.ts`. The phone
+in `src/features/run/{geo,steps,rewards}.ts`, written as pure functions, and this
+server imports **those exact modules** through `src/shared/run.ts`. The phone
 computes a preview with them; the server recomputes the authoritative answer with
 the same code. A second implementation would drift, and the first symptom of
 drift is a user shown one number and credited another.
@@ -31,18 +31,22 @@ mode is active — worth checking first when something 503s.
 
 This is the whole point of the service, so it is worth being explicit.
 
-**What the client sends:** the raw GPS track, a client-generated run id, the step
-count, and the runner's local calendar day.
+**What the client sends:** the raw GPS track, the pedometer's raw running totals,
+a client-generated run id, and the runner's local calendar day.
 
-**What the client does not send:** distance, moving time, rejected-fix count,
-points, or the multiplier. Not because the app is polite about it — because
-there is nowhere in the request body to put them. The server recomputes all of it
-from `track`:
+**What the client does not send:** distance, moving time, rejected-fix count, the
+credited step count, points, stars, or the multiplier. Not because the app is
+polite about it — because there is nowhere in the request body to put them. The
+server recomputes all of it from `track` and `stepSamples`:
 
 ```
-POST /v1/jogging/runs
-  → summarizeTrack(track)          drops bad fixes, sums real distance
-  → calculateReward(stats, ctx)    applies pace bounds, stride check, daily cap
+POST /v1/run/runs
+  → summarizeTrack(track)                 drops bad fixes, sums real distance
+  → creditStepSamples(track, samples)     pairs each pedometer window with the
+                                          ground covered; a phone that did not
+                                          move credits no steps
+  → calculateReward(stats, ctx)           pace bounds, stride check, daily cap,
+                                          and the star for a completed run
   → ledger entry, inside the same transaction as the run row
 ```
 
@@ -59,15 +63,32 @@ POST /v1/auth/logout                                 → 204
 GET  /v1/auth/me                                     → user
 PUT  /v1/auth/wallet         { address }             → user
 
-GET  /v1/jogging/profile?day=YYYY-MM-DD → { pointsBalance, pointsEarnedToday, multiplier, streakDays }
-GET  /v1/jogging/runs                   → run history with reward breakdowns
-POST /v1/jogging/runs                   → the authoritative reward for one run
-POST /v1/jogging/redeem                 → { txHash, alli }
+GET  /v1/run/profile?day=YYYY-MM-DD → { pointsBalance, pointsEarnedToday, multiplier, streakDays }
+GET  /v1/run/runs                   → run history with reward breakdowns
+POST /v1/run/runs                   → the authoritative reward for one run
+POST /v1/run/redeem                 → { txHash, alli }
 ```
 
 `request-code` answers 204 for a new address, an existing one, and a rate-limited
 one alike. Distinguishing them would turn it into an account-existence oracle, so
 the "too many codes" case is swallowed there on purpose.
+
+The app also calls four run-economy endpoints that **this server does not
+implement yet** — run credits, stars and the membership that grants credits:
+
+```
+GET  /v1/run/entitlement            → { runsLeft, runsThisMonth, extraRunsBoughtThisMonth,
+                                        stars, starsToday, membership, serverTime }
+POST /v1/run/credits       { runs }              → buy extra run credits
+POST /v1/run/stars/exchange { stars, toAddress } → burn stars, pay ALLI
+POST /v1/run/membership/renew                    → extend a month, grant its credits
+```
+
+They need a credit ledger and a star ledger shaped like `points_ledger`, the
+month bucket cut with this server's clock, and a USDT charge behind a purchase.
+`calculateReward` already returns the star a completed run earned; nothing
+stores it. The client treats a missing entitlement as non-fatal rather than
+showing a balance it made up.
 
 ## Correctness decisions worth knowing
 
@@ -130,5 +151,10 @@ column referenced in the refund query that the schema did not have.
 - **No admin surface.** Reviewing outlier earners, disabling an account, issuing
   an adjustment — all currently manual SQL. `users.disabled_at` and the
   `adjustment` ledger reason exist for it.
+- **No run credits, stars or membership.** The four endpoints above answer
+  nothing. `calculateReward` already returns the star a completed run earned and
+  the run row stores it inside `reward`, but there is no star balance to spend,
+  no credit to charge a run against, and nothing that takes USDT for either.
+  This is the largest gap in the run loop.
 - **Garden multiplier is not wired in.** `streakMultiplier` is the only source of
   bonus; planted trees are meant to contribute (see `docs/architecture.md`).

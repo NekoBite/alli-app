@@ -18,12 +18,27 @@ export const GeoPointSchema = z.object({
 /** ~5 hours at one fix a second. Past this the payload is abuse, not a marathon. */
 const MAX_TRACK_POINTS = 20_000;
 
+/**
+ * The pedometer's running total for the run, at a moment in time. Sent as
+ * samples rather than one number so the server can pair each one with the
+ * ground the track says was covered while those steps were taken.
+ */
+const StepSampleSchema = z.object({
+  timestamp: z.number().int().positive(),
+  steps: z.number().int().nonnegative().max(500_000),
+});
+
 export const SubmitRunSchema = z.object({
   clientRunId: z.string().min(1).max(128),
   startedAt: z.number().int().positive(),
   endedAt: z.number().int().positive().optional(),
   track: z.array(GeoPointSchema).max(MAX_TRACK_POINTS),
-  steps: z.number().int().nonnegative().max(500_000).optional(),
+  /**
+   * Absent from a device with no pedometer, which costs the run its star but
+   * not its points. A credited step count is deliberately NOT accepted here:
+   * the server derives it from these samples and the track.
+   */
+  stepSamples: z.array(StepSampleSchema).max(MAX_TRACK_POINTS).optional(),
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'day must be YYYY-MM-DD'),
   /** Play Integrity / App Attest token. Required when ATTESTATION=required. */
   attestation: z.string().max(8192).optional(),

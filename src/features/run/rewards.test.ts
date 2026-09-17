@@ -1,4 +1,4 @@
-import { calculateReward, pointsToAlli, REWARD_RULES } from './rewards';
+import { calculateReward, pointsToAlli, REWARD_RULES, starsToAlli } from './rewards';
 import type { GeoPoint } from './types';
 
 /** Minimal track — only its length matters to the GPS-quality check. */
@@ -85,5 +85,62 @@ describe('calculateReward', () => {
     );
 
     expect(reward.points).toBe(450);
+  });
+});
+
+describe('stars', () => {
+  /**
+   * 400 m in 160 s is 2.5 m/s, and 400 m over 200 steps is a 2 m stride — both
+   * inside the rules, so only the goal itself is under test.
+   */
+  const complete = {
+    distanceMetres: 400,
+    movingSeconds: 160,
+    track: track(40),
+    steps: REWARD_RULES.stepGoal,
+  };
+
+  it('pays a star for a clean run that reaches the step goal', () => {
+    const reward = calculateReward(complete, clean);
+
+    expect(reward.flags).toEqual([]);
+    expect(reward.goalReached).toBe(true);
+    expect(reward.stars).toBe(REWARD_RULES.starsPerCompletedRun);
+    expect(starsToAlli(reward.stars)).toBe(REWARD_RULES.alliPerStar);
+  });
+
+  it('pays no star below the step goal, but still pays the distance', () => {
+    const reward = calculateReward({ ...complete, steps: REWARD_RULES.stepGoal - 1 }, clean);
+
+    expect(reward.goalReached).toBe(false);
+    expect(reward.stars).toBe(0);
+    expect(reward.points).toBe(40);
+  });
+
+  it('pays no star when the run was flagged', () => {
+    // 400 m in 30 s: fast enough to be a vehicle.
+    const reward = calculateReward({ ...complete, movingSeconds: 30 }, clean);
+
+    expect(reward.flags).toContain('pace-too-fast');
+    expect(reward.stars).toBe(0);
+  });
+
+  it('still pays the star when only the daily point cap was hit', () => {
+    // Stars are bounded by run credits, points by the daily cap. Hitting one
+    // must not cost the other.
+    const reward = calculateReward(complete, {
+      pointsEarnedToday: REWARD_RULES.dailyPointsCap,
+    });
+
+    expect(reward.flags).toEqual(['daily-cap-reached']);
+    expect(reward.points).toBe(0);
+    expect(reward.stars).toBe(REWARD_RULES.starsPerCompletedRun);
+  });
+
+  it('pays no star when the device reported no steps at all', () => {
+    const reward = calculateReward({ ...complete, steps: undefined }, clean);
+
+    expect(reward.steps).toBe(0);
+    expect(reward.stars).toBe(0);
   });
 });

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { ApiError } from '../lib/errors.ts';
-import { RequestCodeSchema, VerifyCodeSchema, WalletSchema } from '../jogging/schemas.ts';
+import { RequestCodeSchema, VerifyCodeSchema, WalletSchema } from '../run/schemas.ts';
 import { currentUser, requireUser } from './middleware.ts';
 import { requestLoginCode, revokeSession, setWalletAddress, verifyLoginCode } from './service.ts';
 

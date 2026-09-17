@@ -21,7 +21,7 @@ export const SEEDS: Seed[] = [
     growthHours: 24,
     yieldAlli: 12,
     harvestsTotal: 6,
-    joggingBonus: 0.02,
+    runBonus: 0.02,
     blurb: 'Fast-growing starter tree. Cheap, forgiving, and pays back in under a week.',
   },
   {
@@ -34,7 +34,7 @@ export const SEEDS: Seed[] = [
     growthHours: 48,
     yieldAlli: 34,
     harvestsTotal: 8,
-    joggingBonus: 0.03,
+    runBonus: 0.03,
     blurb: 'Slower, but each harvest is worth nearly three Acacias.',
   },
   {
@@ -47,8 +47,8 @@ export const SEEDS: Seed[] = [
     growthHours: 72,
     yieldAlli: 95,
     harvestsTotal: 10,
-    joggingBonus: 0.05,
-    blurb: 'The long game. Highest ALLI-priced yield and a solid jogging bonus.',
+    runBonus: 0.05,
+    blurb: 'The long game. Highest ALLI-priced yield and a solid run bonus.',
   },
   {
     id: 'seed-mangrove-premium',
@@ -60,7 +60,7 @@ export const SEEDS: Seed[] = [
     growthHours: 36,
     yieldAlli: 220,
     harvestsTotal: 12,
-    joggingBonus: 0.1,
+    runBonus: 0.1,
     blurb: 'Coastal carbon sink. Buy with USDT, harvest in ALLI, +10% on every run.',
   },
   {
@@ -73,7 +73,7 @@ export const SEEDS: Seed[] = [
     growthHours: 60,
     yieldAlli: 1_050,
     harvestsTotal: 15,
-    joggingBonus: 0.2,
+    runBonus: 0.2,
     blurb: 'The flagship tree. Highest yield in the garden and a +20% run multiplier.',
   },
 ];

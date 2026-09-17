@@ -93,7 +93,7 @@ function SeedCard({ seed, busy, onBuy }: { seed: Seed; busy: boolean; onBuy: () 
       <Row label="Harvests" value={String(seed.harvestsTotal)} />
       <Row
         label="Run bonus"
-        value={`+${(seed.joggingBonus * 100).toFixed(0)}%`}
+        value={`+${(seed.runBonus * 100).toFixed(0)}%`}
         valueColor={colors.cyan}
       />
       <Row

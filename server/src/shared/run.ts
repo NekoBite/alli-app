@@ -17,7 +17,16 @@ export {
   MAX_ACCURACY_METRES,
   MAX_HOP_METRES,
   MIN_MOVING_SPEED_MPS,
-} from '../../../src/features/jogging/geo.ts';
+} from '../../../src/features/run/geo.ts';
+
+export {
+  creditStepWindow,
+  creditSteps,
+  creditStepSamples,
+  STEP_RULES,
+} from '../../../src/features/run/steps.ts';
+
+export type { StepWindow, StepCredit } from '../../../src/features/run/steps.ts';
 
 export {
   calculateReward,
@@ -25,12 +34,13 @@ export {
   alliToPoints,
   explainFlag,
   REWARD_RULES,
-} from '../../../src/features/jogging/rewards.ts';
+} from '../../../src/features/run/rewards.ts';
 
 export type {
   GeoPoint,
-  JogSession,
-  JogSummary,
+  RunSession,
+  RunSummary,
   RewardBreakdown,
   RewardFlag,
-} from '../../../src/features/jogging/types.ts';
+  StepSample,
+} from '../../../src/features/run/types.ts';

@@ -52,3 +52,9 @@ export function shortAddress(address: string, lead = 6, tail = 4): string {
   if (address.length <= lead + tail + 2) return address;
   return `${address.slice(0, lead)}…${address.slice(-tail)}`;
 }
+
+/** Speed in km/h — the figure the run screen shows beside pace. */
+export function formatSpeedKmh(metresPerSecond: number): string {
+  if (!Number.isFinite(metresPerSecond) || metresPerSecond <= 0) return '0.0';
+  return (metresPerSecond * 3.6).toFixed(1);
+}
