@@ -47,32 +47,34 @@ export type RunSession = {
   stepSamples?: StepSample[];
 };
 
-/** Why a run was rejected or trimmed. Surfaced to the user verbatim. */
+/** Why a run was rejected. Surfaced to the user verbatim. */
 export type RewardFlag =
   | 'pace-too-fast'
   | 'pace-too-slow'
   | 'too-short'
   | 'poor-gps'
-  | 'daily-cap-reached'
   | 'step-mismatch';
 
 export type RewardBreakdown = {
   /** Distance that passed validation, in metres. Measured and shown, never paid. */
   eligibleMetres: number;
-  /** Credited steps that passed validation — the basis of `basePoints`. */
-  eligibleSteps: number;
-  basePoints: number;
-  /** Multiplier from streaks, events, or a planted-tree bonus. */
-  multiplier: number;
-  /** Points before the daily cap. */
-  grossPoints: number;
-  /** Points actually awarded, after the cap. */
-  points: number;
-  /** GPS-backed steps the run was credited with. */
+  /** GPS-backed steps the run was credited with, before validation. */
   steps: number;
-  /** True once those steps clear the step goal — what makes a run "complete". */
-  goalReached: boolean;
-  /** Stars awarded. A completed, unflagged run pays `starsPerCompletedRun`. */
+  /** Credited steps that passed validation and counted towards the quest. */
+  eligibleSteps: number;
+  /** The day's credited step total once this run is counted. */
+  stepsToday: number;
+  /** Steps the quest needs — `REWARD_RULES.dailyStepGoal`, carried for display. */
+  questGoal: number;
+  /** True once the day's total clears the goal, whether or not this run paid. */
+  questCompleted: boolean;
+  /** True when this is the run that completed the quest, so it is the one that pays. */
+  questPaid: boolean;
+  /** What the account's shoe tier multiplied the reward by. */
+  shoeMultiplier: number;
+  /** Stars before the shoe multiplier. */
+  baseStars: number;
+  /** Stars awarded by this run. */
   stars: number;
   flags: RewardFlag[];
 };
@@ -99,11 +101,11 @@ export type Membership = {
 };
 
 /**
- * What the account may do right now — the run-credit balance, stars held, and
- * the membership that tops the credits up.
+ * What the account may do right now — the run-credit balance and the
+ * membership that tops it up. What it has *earned* lives in the profile.
  *
- * Every counter here is the server's: the month and day buckets are cut with
- * the server clock, which is why `serverTime` travels with them. A phone whose
+ * Every counter here is the server's: the month buckets are cut with the
+ * server clock, which is why `serverTime` travels with them. A phone whose
  * clock says it is next month must not get a fresh purchase allowance.
  */
 export type RunEntitlement = {
@@ -113,10 +115,6 @@ export type RunEntitlement = {
   runsThisMonth: number;
   /** Extra credits bought this server month — capped, see `credits.ts`. */
   extraRunsBoughtThisMonth: number;
-  /** Stars held, exchangeable for ALLI. */
-  stars: number;
-  /** Stars earned today, on the server's day. */
-  starsToday: number;
   membership: Membership;
   /** Server clock in ms since epoch, sampled when the entitlement was read. */
   serverTime: number;

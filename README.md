@@ -4,9 +4,10 @@
 
 React Native (Expo SDK 57) app for Android and iOS. Four features:
 
-1. **ALLI RUN** — GPS-tracked runs that earn points and stars, redeemable for **ALLI** on BNB
-   Smart Chain. Each run spends a run credit; credits come from a monthly membership or are
-   bought outright.
+1. **ALLI RUN** — a daily quest of 6,000 GPS-verified steps pays **stars**, exchangeable for
+   **ALLI** on BNB Smart Chain. The reward scales with the tier of NFT footwear held. Each
+   recorded run spends a run credit; credits come from a monthly membership or are bought
+   outright.
 2. **Garden** — plant seeds bought with ALLI, or premium seeds bought with BSC **USDT** for a
    higher yield and a larger run bonus.
 3. **Marketplace** — physical goods paid for in ALLI or USDT.
@@ -24,8 +25,9 @@ npm start          # then press a (Android) / i (iOS), or scan with Expo Go
 ```
 
 It runs with no backend and no chain: `EXPO_PUBLIC_DATA_SOURCE` defaults to `mock`, and the run
-screen synthesises a plausible GPS track and step count so the flow works on a simulator — give it
-about two minutes and the run earns points and a star. Set
+screen synthesises a plausible GPS track and step count so the flow works on a simulator. The
+synthesised run plays at 20× so the 6,000-step quest completes in about a minute and a half
+instead of half an hour. Set
 `EXPO_PUBLIC_MOCK_SENSORS=off` to use the real sensors while the API stays mocked — that is the
 combination you want when testing a run on a device.
 
@@ -67,8 +69,8 @@ src/
   components/              UI primitives (Screen, Button, Card, StatTile, …)
   config/env.ts            typed EXPO_PUBLIC_* access
   features/
-    run/                   geo filtering, step credit, reward rules, credits,
-                           goals, draft, live-session hook, store
+    run/                   geo filtering, step credit, quest rules, shoe tiers,
+                           credits, goals, draft, live-session hook, store
     garden/                seed catalogue, growth math, store
     market/                product catalogue, cart, orders
     wallet/                balances, transfers, card state
@@ -83,9 +85,9 @@ Two conventions worth keeping:
 
 - **Screens never import `ethers` or `fetch` directly.** They go through `src/services`, which is
   why every screen renders with no network.
-- **Domain math is pure and tested.** `rewards.ts`, `geo.ts`, `steps.ts` and `growth.ts` take values
-  and return values — no clock, no storage, no network — so the backend can run the identical
-  functions.
+- **Domain math is pure and tested.** `rewards.ts`, `geo.ts`, `steps.ts`, `shoes.ts` and
+  `growth.ts` take values and return values — no clock, no storage, no network — so the backend can
+  run the identical functions. It does: `server/src/run/service.ts` imports these exact modules.
 
 ## Configuration
 
@@ -94,7 +96,7 @@ binary and is public** — no secrets, ever.
 
 | Variable | Purpose |
 |---|---|
-| `EXPO_PUBLIC_API_URL` | Backend that validates runs and holds the points ledger |
+| `EXPO_PUBLIC_API_URL` | Backend that validates runs and holds the star ledger |
 | `EXPO_PUBLIC_CHAIN` | `mainnet` (chain 56) or `testnet` (chain 97) |
 | `EXPO_PUBLIC_BSC_RPC_URL` | Override the default RPC — use a dedicated node in production |
 | `EXPO_PUBLIC_ALLI_ADDRESS` | ALLI BEP-20 address, blank until deployed |
@@ -103,27 +105,30 @@ binary and is public** — no secrets, ever.
 
 ## The economics, in one place
 
-Every tunable number lives in three files: `src/features/run/rewards.ts` (`REWARD_RULES`),
-`src/features/run/credits.ts` (`RUN_CREDIT_RULES`) and `src/features/garden/catalog.ts` (`SEEDS`).
-The values there are placeholders that make the UI legible — **they are not a balanced economy.**
-Before launch they belong on the server so they can be tuned without an app release. See
-[docs/architecture.md](docs/architecture.md) for the emission model and the sinks that have to
-absorb it.
+Every tunable number lives in four files: `src/features/run/rewards.ts` (`REWARD_RULES`),
+`src/features/run/shoes.ts` (`SHOES`), `src/features/run/credits.ts` (`RUN_CREDIT_RULES`) and
+`src/features/garden/catalog.ts` (`SEEDS`). The values there are placeholders that make the UI
+legible — **they are not a balanced economy.** Before launch they belong on the server so they can
+be tuned without an app release. See [docs/architecture.md](docs/architecture.md) §4 for the
+emission model and the sinks that have to absorb it.
 
-**Steps are what pay.** Distance is measured, shown in kilometres and used to validate — it is how
-the app knows the steps were real, and what the pace and stride checks run on — but the number that
-turns into points is the GPS-backed step count. A run pays in two currencies, bounded differently:
+**One daily quest, paid in stars.** 6,000 GPS-verified steps in a day — accumulated across however
+many runs it takes — pays once. Distance is measured, shown in kilometres and used to validate (it
+is how the app knows the steps were real, and what the pace and stride checks run on), but it is
+the evidence for the steps, never the thing being paid.
 
-- **Points**, per 1,000 credited steps, bounded by a daily cap. 100 points per 1,000 steps,
-  1,000 points = 1 ALLI, 1,000 points/day — so the cap lands at about 10,000 steps a day.
-- **Stars**, one per *completed* run — 200 GPS-backed steps with no validation flags — bounded by
-  run credits rather than by a cap. 1 star = 1,000 ALLI.
+| | Placeholder |
+|---|---|
+| Daily quest | 6,000 GPS-verified steps |
+| Quest reward | 1 star × the shoe multiplier, paid once a day |
+| Shoe tiers | Leather 1× (free at registration), Silver 3×, Gold 5× |
+| Star value | 1 star = 1,000 ALLI |
+| Run credit | one per recorded run; 30/month for 25 USDT, extras at the same rate up to 300/month |
 
-A run credit is the right to record one run. A membership grants 30 a month for 25 USDT, and extra
-credits cost the same per run, up to 300 a month. Credits never expire. That is what bounds star
-emission: a star is only worth more ALLI than a day of running because the run it came from cost
-money. **Both halves are placeholders, and the two scales have not been reconciled** — see
-[docs/architecture.md](docs/architecture.md) §4 before shipping either.
+So a day is worth 1,000 ALLI on the free tier and 5,000 on Gold, and that is the emission to model.
+Two tensions worth naming before these numbers ship: a quest split across three runs costs three
+credits while a membership grants thirty a month, and nothing in the app yet sells the Silver and
+Gold shoes that multiply the payout.
 
 ## What is deliberately not built
 
@@ -160,17 +165,23 @@ defence is server-side: device attestation (Play Integrity / App Attest), per-ac
 route plausibility, and manual review of outliers.
 
 The server already re-runs all of it. A run is uploaded as a raw track plus the pedometer's raw
-totals, and **no credited number is accepted from the phone** — distance, moving time, steps,
-points and stars are all recomputed in `server/src/run/service.ts`.
+totals, and **no credited number is accepted from the phone** — distance, moving time, steps, the
+day's running total, the shoe multiplier and the stars are all recomputed in
+`server/src/run/service.ts`.
 
-### 3. Run credits, stars and membership, server-side
+### 3. Run credits and membership, server-side
 
-The client half is built: `GET /v1/run/entitlement`, `POST /v1/run/credits`,
-`POST /v1/run/stars/exchange` and `POST /v1/run/membership/renew` are defined in
-`src/services/api/run.ts` with working mocks. The server implements none of them yet — there is no
-credit ledger, no star ledger and no membership table, and nothing charges USDT for a purchase.
-Until those exist the app reads an entitlement it cannot get, treats the failure as non-fatal, and
-lets the server be the one to refuse a run.
+The star ledger and the quest are implemented end to end — `GET /v1/run/profile`,
+`GET /v1/run/runs`, `POST /v1/run/runs` and `POST /v1/run/stars/exchange` all work against
+Postgres. What does not exist yet is the credit side: `GET /v1/run/entitlement`,
+`POST /v1/run/credits` and `POST /v1/run/membership/renew` are defined in
+`src/services/api/run.ts` with working mocks and nothing behind them, so there is no credit ledger,
+no membership table, and nothing charges USDT for a purchase. Until those exist the app reads an
+entitlement it cannot get, treats the failure as non-fatal, and lets the server be the one to
+refuse a run.
+
+Shoe tiers are stored (`users.shoe_tier`, issued Leather at registration) and the server applies
+the multiplier, but **upgrading is not built**: nothing mints or sells a Silver or Gold NFT.
 
 ### 4. Background location
 

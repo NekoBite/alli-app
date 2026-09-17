@@ -1,4 +1,5 @@
 import { averageSpeed } from './geo';
+import { shoeMultiplier, type ShoeTier } from './shoes';
 import type { RunSession, RewardBreakdown, RewardFlag } from './types';
 
 /**
@@ -10,35 +11,29 @@ import type { RunSession, RewardBreakdown, RewardFlag } from './types';
  * server re-runs this on the raw track before any ALLI moves. Never award from
  * the client alone; a value the phone can edit is a value the phone can mint.
  *
- * **Steps are what pay.** Distance is measured, shown and used to validate —
- * it is how the app knows the steps were real and how pace and stride are
- * checked — but the number that turns into points is the GPS-backed step count.
- * Rewarding distance directly would pay a phone in a car window; rewarding
- * steps that distance has already vouched for pays the person who took them.
+ * The reward is a **daily quest**, not a per-run payout: 6,000 GPS-verified
+ * steps in a day, accumulated across however many runs it takes, pays once.
+ * Distance is measured, shown in kilometres and used to validate — pace, stride
+ * and the minimum below all run on it — but it is the evidence for the steps,
+ * never the thing being paid.
  *
- * Two currencies come out of one run, and they are bounded differently:
- *
- * - **Points** accrue per 1,000 credited steps and are bounded by a daily cap.
- * - **Stars** are paid once per *completed* run, and are bounded by run
- *   credits, which are bought (see `credits.ts`). One star is worth far more
- *   ALLI than a day of points; that is only coherent because a star costs a run
- *   credit and a run credit costs USDT. See docs/architecture.md §4 — neither
- *   number is a balanced economy yet.
+ * Stars are the reward unit; ALLI is the payout. What scales a day's stars is
+ * the tier of NFT footwear the account holds (see `shoes.ts`), applied at the
+ * moment the quest pays so that upgrading later cannot re-price stars already
+ * earned.
  */
 export const REWARD_RULES = {
+  /** GPS-backed steps a day needs before the quest pays. */
+  dailyStepGoal: 6_000,
+  /** Stars the quest pays, before the shoe multiplier. */
+  starsPerQuest: 1,
+  /** ALLI one star exchanges for. */
+  alliPerStar: 1_000,
+
   /**
-   * Points per 1,000 GPS-backed steps — the reward basis.
-   *
-   * Roughly 1,250 steps to the kilometre at a 0.8 m stride, so this is about
-   * 125 points for a km walked, near enough to the 100/km this replaced that
-   * nobody's balance moves much. The daily cap then lands at about 10,000
-   * steps, which is the number people already have in their heads.
-   */
-  pointsPerThousandSteps: 100,
-  /**
-   * Runs shorter than this earn nothing — stops micro-run farming. Distance
-   * does not pay, but it still has to be there: it is what vouches for the
-   * steps.
+   * Runs shorter than this earn nothing and contribute no steps — it stops
+   * micro-run farming. Distance does not pay, but it still has to be there:
+   * it is what vouches for the steps.
    */
   minDistanceMetres: 300,
   /**
@@ -48,8 +43,6 @@ export const REWARD_RULES = {
    */
   minSpeedMps: 0.7,
   maxSpeedMps: 6.0,
-  /** Points a single account can earn per calendar day. */
-  dailyPointsCap: 1_000,
   /** Fraction of fixes that may be rejected before the run is treated as untrusted. */
   maxRejectedFraction: 0.35,
   /**
@@ -57,46 +50,39 @@ export const REWARD_RULES = {
    * longer stride than the pedometer supports, the phone was probably in a car.
    */
   maxMetresPerStep: 2.5,
-  /** Points required for one ALLI. */
-  pointsPerAlli: 1_000,
-
-  /**
-   * GPS-backed steps that complete a run. Below this the run still earns
-   * points for the steps it did take, but pays no star.
-   *
-   * 200 steps is around 150 m, so in practice `minDistanceMetres` binds first:
-   * a run has to be clean *and* long enough to pass validation before either
-   * reward pays anything.
-   */
-  stepGoal: 200,
-  /** Stars paid by one completed run. */
-  starsPerCompletedRun: 1,
-  /** ALLI one star exchanges for. */
-  alliPerStar: 1_000,
 } as const;
 
 export type RewardContext = {
-  /** Points already earned today, from the server-side ledger. */
-  pointsEarnedToday: number;
   /**
-   * Multiplier from streaks, events and planted trees. Comes from the backend so
-   * the client cannot inflate it. 1 = no bonus.
+   * GPS-credited steps already banked today, from the server-side ledger. The
+   * quest is a running total across the day, so a run is judged on where it
+   * leaves that total, not on its own step count.
    */
-  multiplier?: number;
+  stepsToday: number;
+  /**
+   * Stars today's quest has already paid. Non-zero means the quest is done and
+   * further runs today add steps but no stars.
+   */
+  starsEarnedToday?: number;
+  /**
+   * The NFT footwear tier the account holds. Comes from the backend so the
+   * client cannot inflate it.
+   */
+  shoeTier?: ShoeTier;
   /** Fixes the track filter discarded — see `summarizeTrack`. */
   rejectedPoints?: number;
 };
 
 /**
- * Turns a finished run into points and stars. Pure: no clock, no network, no
- * storage — which is what lets the server run the identical function on the raw
- * track.
+ * Turns a finished run into its contribution to the daily quest. Pure: no
+ * clock, no network, no storage — which is what lets the server run the
+ * identical function on the raw track.
  *
  * `steps` must already be GPS-credited (`creditSteps` in `steps.ts`); a raw
- * pedometer count passed in here would let a shaken phone earn a full day's
- * points from an armchair. It is also the basis of the whole reward, so a
- * device with no pedometer earns nothing, however far it walked — the run
- * screen says so rather than letting someone find out afterwards.
+ * pedometer count passed in here would let a shaken phone clear the quest from
+ * an armchair. It is also the entire basis of the reward, so a device with no
+ * pedometer earns nothing however far it walked — the run screen says so
+ * rather than letting someone find out afterwards.
  */
 export function calculateReward(
   session: Pick<RunSession, 'distanceMetres' | 'movingSeconds' | 'track' | 'steps'>,
@@ -104,7 +90,6 @@ export function calculateReward(
 ): RewardBreakdown {
   const flags: RewardFlag[] = [];
   const { distanceMetres, movingSeconds, track, steps } = session;
-  const multiplier = context.multiplier ?? 1;
 
   const rejected = context.rejectedPoints ?? 0;
   const totalPoints = track.length + rejected;
@@ -126,48 +111,40 @@ export function calculateReward(
     flags.push('step-mismatch');
   }
 
-  // Any validation flag zeroes the run. Partial credit would give a cheat a
-  // dial to tune against, so the rule is all-or-nothing.
-  const creditedSteps = Math.max(0, Math.floor(steps ?? 0));
+  // Any validation flag zeroes the run — it adds nothing to the day's total.
+  // Partial credit would give a cheat a dial to tune against, so the rule is
+  // all-or-nothing.
   const clean = flags.length === 0;
+  const creditedSteps = Math.max(0, Math.floor(steps ?? 0));
   const eligibleMetres = clean ? distanceMetres : 0;
   const eligibleSteps = clean ? creditedSteps : 0;
-  // Steps pay; the distance above is what proved they happened.
-  const basePoints = (eligibleSteps / 1000) * REWARD_RULES.pointsPerThousandSteps;
-  const grossPoints = Math.floor(basePoints * multiplier);
 
-  const remainingToday = Math.max(0, REWARD_RULES.dailyPointsCap - context.pointsEarnedToday);
-  const points = Math.min(grossPoints, remainingToday);
-  if (grossPoints > points) flags.push('daily-cap-reached');
+  const stepsBefore = Math.max(0, Math.floor(context.stepsToday));
+  const stepsToday = stepsBefore + eligibleSteps;
 
-  // The star is the completion reward: the step goal has to be met *and* the
-  // run has to be clean. Hitting the daily point cap does not cost the star —
-  // the cap bounds points, and stars are bounded by run credits instead.
-  const blocking = flags.filter((flag) => flag !== 'daily-cap-reached');
-  const goalReached = creditedSteps >= REWARD_RULES.stepGoal;
-  const stars = goalReached && blocking.length === 0 ? REWARD_RULES.starsPerCompletedRun : 0;
+  const alreadyPaid = (context.starsEarnedToday ?? 0) > 0;
+  const questCompleted = stepsToday >= REWARD_RULES.dailyStepGoal;
+  // Only the run that carries the day over the line pays. Later runs still
+  // bank their steps — they count towards tomorrow's streak, not today's star.
+  const questPaid = questCompleted && !alreadyPaid;
+
+  const multiplier = shoeMultiplier(context.shoeTier);
+  const baseStars = questPaid ? REWARD_RULES.starsPerQuest : 0;
+  const stars = baseStars * multiplier;
 
   return {
     eligibleMetres,
-    eligibleSteps,
-    basePoints,
-    multiplier,
-    grossPoints,
-    points,
     steps: creditedSteps,
-    goalReached,
+    eligibleSteps,
+    stepsToday,
+    questGoal: REWARD_RULES.dailyStepGoal,
+    questCompleted,
+    questPaid,
+    shoeMultiplier: multiplier,
+    baseStars,
     stars,
     flags,
   };
-}
-
-/** Points -> ALLI, at the fixed conversion rate. */
-export function pointsToAlli(points: number): number {
-  return points / REWARD_RULES.pointsPerAlli;
-}
-
-export function alliToPoints(alli: number): number {
-  return Math.ceil(alli * REWARD_RULES.pointsPerAlli);
 }
 
 /** Stars -> ALLI, at the fixed exchange rate. */
@@ -175,20 +152,29 @@ export function starsToAlli(stars: number): number {
   return stars * REWARD_RULES.alliPerStar;
 }
 
+/** Progress towards today's quest, clamped to 0–1, for a progress bar. */
+export function questProgress(stepsToday: number): number {
+  if (REWARD_RULES.dailyStepGoal <= 0) return 1;
+  return Math.min(1, Math.max(0, stepsToday / REWARD_RULES.dailyStepGoal));
+}
+
+/** Steps still needed today. 0 once the quest is met. */
+export function stepsToGo(stepsToday: number): number {
+  return Math.max(0, REWARD_RULES.dailyStepGoal - Math.floor(stepsToday));
+}
+
 /** User-facing copy for a flag. Shown on the run summary so rejection is never silent. */
 export function explainFlag(flag: RewardFlag): string {
   switch (flag) {
     case 'pace-too-fast':
-      return 'Your average pace was faster than a person can run, so this run was not counted.';
+      return 'Your average pace was faster than a person can run, so this run did not count towards the quest.';
     case 'pace-too-slow':
-      return 'Your average pace was below walking speed, so this run was not counted.';
+      return 'Your average pace was below walking speed, so this run did not count towards the quest.';
     case 'too-short':
-      return `Runs under ${REWARD_RULES.minDistanceMetres} m do not earn points, however many steps they hold.`;
+      return `Runs under ${REWARD_RULES.minDistanceMetres} m do not count, however many steps they hold.`;
     case 'poor-gps':
       return 'Too many GPS readings were unusable. Try again with a clearer view of the sky.';
-    case 'daily-cap-reached':
-      return `You have hit today's ${REWARD_RULES.dailyPointsCap.toLocaleString()} point cap. It resets at midnight.`;
     case 'step-mismatch':
-      return 'The distance did not match your step count, so this run was not counted.';
+      return 'The distance did not match your step count, so this run did not count towards the quest.';
   }
 }

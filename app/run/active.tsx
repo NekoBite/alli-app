@@ -3,8 +3,7 @@ import { useRouter } from 'expo-router';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { Button, Card, Pill, ProgressBar, Row, Screen, StatTile, Text } from '@/components';
-import { REWARD_RULES } from '@/features/run/rewards';
-import { goalProgress } from '@/features/run/steps';
+import { questProgress, REWARD_RULES, starsToAlli } from '@/features/run/rewards';
 import { useRunStore } from '@/features/run/store';
 import { useRunSession } from '@/features/run/useRunSession';
 import type { RunSession } from '@/features/run/types';
@@ -14,6 +13,7 @@ import {
   formatDuration,
   formatPoints,
   formatSpeedKmh,
+  formatToken,
 } from '@/utils/format';
 
 export default function ActiveRunScreen() {
@@ -32,7 +32,7 @@ export default function ActiveRunScreen() {
     session.rejectedPoints,
   );
 
-  const progress = goalProgress(session.steps, REWARD_RULES.stepGoal);
+  const progress = questProgress(preview.stepsToday);
 
   const finish = useCallback(async () => {
     session.finish();
@@ -98,54 +98,58 @@ export default function ActiveRunScreen() {
 
       <View style={styles.metrics}>
         <Text variant="label" color={colors.ink2}>
-          Distance
+          Steps · GPS
         </Text>
         <View style={styles.metricRow}>
           <Text variant="metric" color={colors.green}>
-            {formatDistance(session.distanceMetres)}
+            {formatPoints(session.steps)}
           </Text>
           <Text variant="heading" color={colors.ink2}>
-            km
+            steps
           </Text>
         </View>
       </View>
 
       <Card style={styles.card}>
         <View style={styles.stats}>
-          <StatTile label="Steps · GPS" value={formatPoints(session.steps)} />
+          <StatTile label="Distance" value={formatDistance(session.distanceMetres)} unit="km" />
           <StatTile label="Time" value={formatDuration(session.elapsedSeconds)} />
         </View>
         <View style={styles.stats}>
           <StatTile label="Speed" value={formatSpeedKmh(session.speedMps)} unit="km/h" />
           <StatTile
-            label="Points"
-            value={formatPoints(preview.points)}
+            label="Steps today"
+            value={formatPoints(preview.stepsToday)}
             color={preview.flags.length ? colors.warning : colors.green}
           />
         </View>
         <Text variant="caption" color={colors.ink3}>
-          Points and stars shown are an estimate. The server re-checks the run before any ALLI is
-          credited.
+          Everything here is an estimate. The server re-checks the run before any star is credited.
         </Text>
       </Card>
 
       <Card style={styles.card}>
         <Row
-          label={`Progress to ${REWARD_RULES.stepGoal} steps`}
+          label={`Today's quest · ${formatPoints(REWARD_RULES.dailyStepGoal)} steps`}
           value={`${Math.round(progress * 100)}%`}
-          valueColor={preview.goalReached ? colors.green : colors.ink}
+          valueColor={preview.questCompleted ? colors.green : colors.ink}
           emphasis
         />
-        <ProgressBar progress={progress} color={preview.goalReached ? colors.green : colors.cyan} />
+        <ProgressBar
+          progress={progress}
+          color={preview.questCompleted ? colors.green : colors.cyan}
+        />
         <Text variant="caption" color={colors.ink2}>
-          {preview.goalReached
-            ? `Goal reached — this run pays ${REWARD_RULES.starsPerCompletedRun} star when it is accepted.`
-            : `${formatPoints(Math.max(0, REWARD_RULES.stepGoal - session.steps))} GPS-backed steps to go before this run counts as complete.`}
+          {preview.questPaid
+            ? `Quest complete — this run pays ${preview.stars} star${preview.stars === 1 ? '' : 's'} (≈ ${formatToken(starsToAlli(preview.stars), 'ALLI')}) at your ${preview.shoeMultiplier}× tier.`
+            : preview.questCompleted
+              ? "Today's quest is already paid. These steps still bank towards your streak."
+              : `${formatPoints(Math.max(0, REWARD_RULES.dailyStepGoal - preview.stepsToday))} GPS-verified steps to go today.`}
         </Text>
         {session.pedometer === 'unavailable' ? (
           <Text variant="caption" color={colors.warning}>
             No step counter on this device. Steps are what earn — without one this run records
-            distance but cannot pay points or a star.
+            distance but adds nothing to the quest.
           </Text>
         ) : null}
       </Card>

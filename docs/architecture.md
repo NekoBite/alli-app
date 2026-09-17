@@ -18,12 +18,12 @@ sensor data they can fake. Everything that decides how much ALLI exists must liv
 | Track filtering | ✅ preview | ✅ **authoritative** — re-run on the raw track |
 | Step credit (steps vs. ground covered) | ✅ preview | ✅ **authoritative** — re-run on the samples |
 | Reward calculation | ✅ preview | ✅ **authoritative** |
-| Points ledger | cached | ✅ source of truth |
+| The day's step total | shown | ✅ summed from validated runs |
 | Star ledger | cached | ✅ source of truth |
+| Shoe tier (the reward multiplier) | displayed | ✅ source of truth, applied when the quest pays |
+| Quest paid today | shown | ✅ enforced under the row lock |
 | Run credits (balance, monthly ceiling) | shown | ✅ source of truth, spent on submit |
 | Membership state | shown | ✅ source of truth |
-| Daily cap | shown | ✅ enforced |
-| Multiplier (streak, garden) | displayed | ✅ computed and supplied |
 | Seed prices, yields | bundled placeholders | ✅ should own these |
 | Order state | displayed | ✅ source of truth |
 | Payment confirmation | — | ✅ watches the chain |
@@ -52,30 +52,38 @@ must not get a fresh purchase allowance.
       │
       ├─ re-run summarizeTrack() on the raw track     ← ignore client-supplied distance
       ├─ re-run creditStepSamples() on the samples    ← ignore client-supplied step count
-      ├─ re-run calculateReward() with the server's ledger
+      ├─ read the day's steps so far, and whether it already paid   ← under the row lock
+      ├─ read the account's shoe tier                 ← ignore client-supplied multiplier
+      ├─ re-run calculateReward()
       ├─ device attestation (Play Integrity / App Attest)
       ├─ rate limits + outlier review
       ▼
- one run credit spent · points credited · a star if the run completed
+ steps banked · one run credit spent · a star × the shoe tier if the day crossed 6,000
       │
       ▼
- POST /v1/run/redeem { points }  ·or·  POST /v1/run/stars/exchange { stars }
+ POST /v1/run/stars/exchange { stars }
       │
-      ├─ burn the points, or the stars
+      ├─ burn the stars
       ├─ sign a claim voucher: (address, amount, nonce, deadline)
       ▼
  contract verifies signature + nonce, transfers ALLI
 ```
 
-Once the credit ledger exists (§6 — it does not yet), the credit has to be spent inside the same
-transaction that writes the run, so that a retried upload cannot spend two. The unique index on
-`(user_id, client_run_id)` is what makes that hold; the mock already behaves this way.
+The quest is a running total over the runner's local day, not a per-run prize: five short walks
+that add to 6,000 steps pay exactly what one long one does, and the run that crosses the line is
+the one the star is booked against.
 
-Points and stars are **off-chain**; ALLI is **on-chain**. This matters: it keeps per-run accounting
-free, makes the daily cap enforceable, and means a bug in reward math is a ledger correction rather
-than an irreversible mint.
+`submitRun` takes `SELECT … FOR UPDATE` on the user before reading the day's total, so ten
+concurrent uploads cannot each see "no star yet today" and each pay one. There is a test for
+exactly that. Once the credit ledger exists (§6 — it does not yet), the credit has to be spent
+inside the same transaction, so that a retried upload cannot spend two; the unique index on
+`(user_id, client_run_id)` is what makes that hold, and the mock already behaves this way.
 
-Never mint per run. Redemption is a deliberate, rate-limited, user-initiated step.
+Stars are **off-chain**; ALLI is **on-chain**. This matters: it keeps per-run accounting free,
+makes the once-a-day rule enforceable, and means a bug in the reward math is a ledger correction
+rather than an irreversible mint.
+
+Never mint per run. The exchange is a deliberate, rate-limited, user-initiated step.
 
 ## 3. Anti-cheat, in layers
 
@@ -93,9 +101,9 @@ server-side on the raw inputs):
 | Minimum distance | 300 m | micro-run farming |
 | Step window | no GPS movement, no steps | a phone shaken in a chair |
 | Step ceiling | ≤ 1 step per 0.3 m covered | an inflated pedometer total |
-| No steps, no points | distance alone pays nothing | GPS spoofed with nobody walking |
-| Daily cap | 1,000 points | account farming rate |
-| Run credits | one per recorded run | star emission rate |
+| No steps, no stars | distance alone pays nothing | GPS spoofed with nobody walking |
+| Quest pays once a day | 1 star × tier | account farming rate |
+| Run credits | one per recorded run | how often a run can even be submitted |
 
 Any flag zeroes the run. Partial credit gives a cheat a dial to tune against.
 
@@ -106,34 +114,40 @@ device and a mock-location provider. The layers that actually matter:
    (still let them use the app).
 2. **Account-level analysis** — same device fingerprint across many accounts, runs that repeat the
    same route with implausible regularity, sign-up velocity from one IP.
-3. **Economic limits** — the daily cap is the real backstop. Even a perfect spoofer is bounded to
-   1,000 points/day/account, which makes farming a question of account-creation cost.
+3. **Economic limits** — the once-a-day quest is the real backstop. Even a perfect spoofer is
+   bounded to one quest per account per day, which makes farming a question of account-creation
+   cost multiplied by the tier they can afford.
 4. **Manual review** — flag the top 0.1% of earners weekly and look.
 
 ## 4. Token economics
 
-Placeholder numbers from `REWARD_RULES` and `SEEDS`:
+Placeholder numbers from `REWARD_RULES`, `SHOES` and `SEEDS`:
 
 **Emission**
-- 100 points per 1,000 GPS-backed steps → 1,000 points = 1 ALLI → **1 ALLI per 10,000 steps**
-- Daily cap 1,000 points = **1 ALLI/day/account** from running, or about 10,000 steps
+- One quest a day: 6,000 GPS-verified steps → 1 star × the shoe multiplier
+- 1 star = 1,000 ALLI, so a day is **1,000 ALLI on Leather, 3,000 on Silver, 5,000 on Gold**
 - Distance is measured and shown but never paid: it is the witness for the steps, not the reward
-- 1 star per completed run → 1 star = 1,000 ALLI, bounded by run credits rather than by a cap
 - Garden harvests: 12–1,050 ALLI per harvest depending on tier
-- Garden run bonus: up to +50% (capped in `growth.ts`)
+- Garden run bonus: up to +50% (capped in `growth.ts`) — **not wired into the quest**, see §6
 
 **Sinks**
 - Run credits: 25 USDT for 30, or 0.83 USDT each up to 300/month
 - Standard seeds: 50–300 ALLI
 - Marketplace goods: 1,800–3,400 ALLI
-- (not yet designed) fees, upgrades, cosmetics
+- (not yet designed) shoe upgrades, fees, cosmetics
 
-**The two reward scales have not been reconciled.** A star is worth 1,000 ALLI and a 10 km run is
-worth 1. That is only defensible while a star costs a run credit and a run credit costs USDT — the
-same treasury-funded-emission shape as the premium trees below, with the same liability to model:
-every unspent run credit is a claim on 1,000 ALLI. Pick one of these before launch — price the star
-against the points economy, or accept that credits are the emission control and model the float
-accordingly. `REWARD_RULES.alliPerStar` carries the reference app's number, not a decision.
+**The shoe tier is the emission curve, and nothing sells the shoes yet.** A Gold holder mints five
+times a Leather holder for identical effort, so the float has to be modelled against the *tier mix*,
+not the headcount: 10,000 Gold accounts walking their quest is 50M ALLI a day. Whatever eventually
+sells Silver and Gold is therefore not a shop feature, it is the emission control — price it
+against the ALLI it commits the treasury to paying, and cap supply per tier if that number does not
+close.
+
+**The run-credit maths does not balance against a 6,000-step quest.** 6,000 steps is roughly an
+hour of walking, which most people will split across two or three runs, and every recorded run
+costs a credit — while a membership grants thirty a month. Either the membership grants closer to
+90, or extra credits are the real revenue line and that should be a deliberate choice rather than
+an accident of the numbers.
 
 The problem to solve before launch is visible in those numbers: an Ironwood yields 1,050 ALLI
 × 15 harvests = 15,750 ALLI for 20 USDT, while a day of running yields 1. The premium tree is not
@@ -179,15 +193,14 @@ anything. Get it audited — this contract is the mint.
 Endpoints the client already calls (`src/services/api/`):
 
 ```
-GET  /v1/run/profile?day=YYYY-MM-DD       → points balance, earned today, multiplier, streak
+GET  /v1/run/profile?day=YYYY-MM-DD       → stars, stars today, steps today, streak, shoe tier
 GET  /v1/run/runs                         → run history with reward breakdowns
 POST /v1/run/runs                         → submit a run, returns the authoritative reward
-POST /v1/run/redeem                       → burn points, return { txHash, alli }
+POST /v1/run/stars/exchange { stars, toAddress } → burn stars, return { txHash, alli, starsBalance }
 
                                           ── not implemented server-side yet ──
-GET  /v1/run/entitlement                  → run credits, stars, membership, serverTime
+GET  /v1/run/entitlement                  → run credits, membership, serverTime
 POST /v1/run/credits       { runs }       → buy extra credits, returns the entitlement
-POST /v1/run/stars/exchange { stars, toAddress } → burn stars, return { txHash, alli, entitlement }
 POST /v1/run/membership/renew             → extend a month, grant its credits
 
 GET  /v1/garden/plots                     → plots
@@ -211,11 +224,15 @@ POST /v1/card/topup                       → { amountUsd, from }
 Each has a mock implementation behind the same interface, so the backend can be built against a
 client that already works.
 
-The four run-economy endpoints are defined and mocked client-side (`src/services/api/run.ts`) and
-answer nothing on the server. They need a credit ledger and a star ledger with the same
-append-only shape as `points_ledger` — a balance column would be faster to read and impossible to
-audit, and "where did my run credits go" has to have an answer. The client treats their absence as
-non-fatal rather than fabricating a balance.
+The three credit endpoints are defined and mocked client-side (`src/services/api/run.ts`) and
+answer nothing on the server. They need a credit ledger with the same append-only shape as
+`star_ledger` — a balance column would be faster to read and impossible to audit, and "where did my
+run credits go" has to have an answer — plus a membership row and whatever collects the USDT. The
+client treats their absence as non-fatal rather than fabricating a balance.
+
+Two more gaps on the reward side: nothing mints or sells a Silver or Gold shoe (the tier is stored
+and honoured, but every account is Leather), and the garden's run bonus is not applied to the quest
+— `growth.ts` computes a multiplier that nothing reads.
 
 Two notes. Transfer history should come from an indexer (BscScan API, Covalent, or a self-hosted
 one) — never scan blocks from the phone. And order payment is confirmed by the backend watching
@@ -226,7 +243,7 @@ the chain, never by the client reporting success.
 1. **Auth** — sign-in, session token into `SECURE_KEYS.session`. Everything else needs an account.
 2. **Custody decision** — see [`README.md`](../README.md) §1. This one blocks the wallet, the marketplace
    and the card, so make it early.
-3. **Points ledger + run validation** — the server half of `rewards.ts`, with attestation. Done,
+3. **Star ledger + run validation** — the server half of `rewards.ts`, with attestation. Done,
    except attestation.
 4. **Run credits, stars and membership** — the ledgers behind `/v1/run/entitlement` and the USDT
    charge behind a purchase. Until this lands the run feature has a balance it cannot read.

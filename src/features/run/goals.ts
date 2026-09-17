@@ -3,17 +3,17 @@ import { REWARD_RULES } from './rewards';
 import type { RunSummary } from './types';
 
 /**
- * Daily and weekly goal tracking, derived from run history rather than stored.
+ * Daily and weekly quest tracking, derived from run history rather than stored.
  *
  * Nothing here is authoritative — it is a read over runs the server already
  * validated, so there is no second ledger to keep in step. Buckets are the
- * runner's local days, the same bucket the daily point cap uses.
+ * runner's local days, the same bucket the daily quest is counted in.
  */
 export const GOAL_RULES = {
   /** Days shown in the strip. */
   weekDays: 7,
-  /** A day counts as met once its credited steps clear one run's step goal. */
-  dailyStepGoal: REWARD_RULES.stepGoal,
+  /** Steps a day needs for its quest to pay. */
+  dailyStepGoal: REWARD_RULES.dailyStepGoal,
 } as const;
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
@@ -26,23 +26,23 @@ export type DayGoal = {
   runs: number;
   metres: number;
   movingSeconds: number;
+  /** Steps that counted towards the quest. */
   steps: number;
   stars: number;
-  points: number;
-  goalMet: boolean;
+  /** True once the day's credited steps clear the quest goal. */
+  questMet: boolean;
   isToday: boolean;
 };
 
 export type WeekTotals = {
-  /** Days in the window whose goal was met. */
-  goalDays: number;
+  /** Days in the window whose quest was completed. */
+  questDays: number;
   days: number;
   runs: number;
   metres: number;
   movingSeconds: number;
   steps: number;
   stars: number;
-  points: number;
 };
 
 /**
@@ -69,8 +69,7 @@ export function weekGoals(
       movingSeconds: 0,
       steps: 0,
       stars: 0,
-      points: 0,
-      goalMet: false,
+      questMet: false,
       isToday: offset === 0,
     });
   }
@@ -81,13 +80,12 @@ export function weekGoals(
     bucket.runs += 1;
     bucket.metres += run.distanceMetres;
     bucket.movingSeconds += run.movingSeconds;
-    bucket.steps += run.reward.steps;
+    bucket.steps += run.reward.eligibleSteps;
     bucket.stars += run.reward.stars;
-    bucket.points += run.reward.points;
   }
 
   for (const bucket of buckets.values()) {
-    bucket.goalMet = bucket.steps >= GOAL_RULES.dailyStepGoal;
+    bucket.questMet = bucket.steps >= GOAL_RULES.dailyStepGoal;
   }
 
   return [...buckets.values()];
@@ -96,15 +94,14 @@ export function weekGoals(
 export function weekTotals(days: DayGoal[]): WeekTotals {
   return days.reduce<WeekTotals>(
     (total, day) => ({
-      goalDays: total.goalDays + (day.goalMet ? 1 : 0),
+      questDays: total.questDays + (day.questMet ? 1 : 0),
       days: total.days + 1,
       runs: total.runs + day.runs,
       metres: total.metres + day.metres,
       movingSeconds: total.movingSeconds + day.movingSeconds,
       steps: total.steps + day.steps,
       stars: total.stars + day.stars,
-      points: total.points + day.points,
     }),
-    { goalDays: 0, days: 0, runs: 0, metres: 0, movingSeconds: 0, steps: 0, stars: 0, points: 0 },
+    { questDays: 0, days: 0, runs: 0, metres: 0, movingSeconds: 0, steps: 0, stars: 0 },
   );
 }

@@ -4,19 +4,28 @@ import { runApi } from '@/services/api';
 import { dayKey } from '@/utils/time';
 import { checkCanStart, checkPurchase, RUN_CREDIT_RULES } from './credits';
 import { calculateReward } from './rewards';
+import { DEFAULT_SHOE_TIER } from './shoes';
 import type { RewardBreakdown, RunEntitlement, RunSession, RunSummary } from './types';
+import type { RunProfile } from '@/services/api';
 
 /**
- * What the app assumes before the server has answered: no credits, no stars, no
- * membership. Optimistic defaults would show a Start button that the server
- * then refuses, so the pessimistic ones are the honest choice.
+ * What the app assumes before the server has answered: nothing earned, nothing
+ * banked today, the free tier. Optimistic defaults would show a quest half
+ * finished that the server then denies.
  */
+const EMPTY_PROFILE: RunProfile = {
+  starsBalance: 0,
+  starsEarnedToday: 0,
+  stepsToday: 0,
+  streakDays: 0,
+  shoeTier: DEFAULT_SHOE_TIER,
+};
+
+/** Likewise: no credits until the server says otherwise. */
 const EMPTY_ENTITLEMENT: RunEntitlement = {
   runsLeft: 0,
   runsThisMonth: 0,
   extraRunsBoughtThisMonth: 0,
-  stars: 0,
-  starsToday: 0,
   membership: {
     status: 'none',
     runsPerRenewal: RUN_CREDIT_RULES.runsPerRenewal,
@@ -27,40 +36,32 @@ const EMPTY_ENTITLEMENT: RunEntitlement = {
 
 type RunState = {
   history: RunSummary[];
-  /** Points held off-chain, redeemable for ALLI. */
-  pointsBalance: number;
-  pointsEarnedToday: number;
-  /** Server-issued bonus multiplier (streaks, planted trees, events). */
-  multiplier: number;
-  /** Consecutive days with a qualifying run. */
-  streakDays: number;
-  /** Run credits, stars and membership, as the server counts them. */
+  /** Stars, today's quest progress and the shoe tier. */
+  profile: RunProfile;
+  /** Run credits and membership, as the server counts them. */
   entitlement: RunEntitlement;
   /**
-   * Set when the entitlement could not be read. The rest of the screen still
-   * works on points; only the credit and star surfaces go quiet.
+   * Set when the entitlement could not be read. The quest half of the screen
+   * still works; only the credit surfaces go quiet.
    */
   entitlementError?: string;
   loading: boolean;
-  redeeming: boolean;
-  buying: boolean;
   exchanging: boolean;
+  buying: boolean;
   renewing: boolean;
   error?: string;
 
   refresh: () => Promise<void>;
-  /** Local preview of what a finished run is worth, before the server validates. */
+  /** Local preview of what a finished run adds to today's quest. */
   previewReward: (
     session: Pick<RunSession, 'distanceMetres' | 'movingSeconds' | 'track' | 'steps'>,
     rejectedPoints: number,
   ) => RewardBreakdown;
   submitRun: (session: RunSession, rejectedPoints: number) => Promise<RunSummary>;
-  /** Burns points and mints the matching ALLI to the user's wallet. */
-  redeemPoints: (points: number, toAddress: string) => Promise<{ txHash: string; alli: number }>;
+  /** Burns stars and sends the matching ALLI to the user's wallet. */
+  exchangeStars: (stars: number, toAddress: string) => Promise<{ txHash: string; alli: number }>;
   /** Buys extra run credits. The USDT charge is the server's to make. */
   buyRuns: (count: number) => Promise<void>;
-  /** Exchanges stars for ALLI on-chain. */
-  exchangeStars: (stars: number, toAddress: string) => Promise<{ txHash: string; alli: number }>;
   renewMembership: () => Promise<void>;
   /** Whether a run may be started — credits, in a form the button can explain. */
   canStart: () => { ok: boolean; reason?: string };
@@ -68,15 +69,11 @@ type RunState = {
 
 export const useRunStore = create<RunState>((set, get) => ({
   history: [],
-  pointsBalance: 0,
-  pointsEarnedToday: 0,
-  multiplier: 1,
-  streakDays: 0,
+  profile: EMPTY_PROFILE,
   entitlement: EMPTY_ENTITLEMENT,
   loading: false,
-  redeeming: false,
-  buying: false,
   exchanging: false,
+  buying: false,
   renewing: false,
 
   async refresh() {
@@ -86,20 +83,13 @@ export const useRunStore = create<RunState>((set, get) => ({
         runApi.getProfile(dayKey()),
         runApi.getHistory(),
       ]);
-      set({
-        pointsBalance: profile.pointsBalance,
-        pointsEarnedToday: profile.pointsEarnedToday,
-        multiplier: profile.multiplier,
-        streakDays: profile.streakDays,
-        history,
-        loading: false,
-      });
+      set({ profile, history, loading: false });
     } catch (error) {
       set({ loading: false, error: (error as Error).message });
     }
 
     // Read separately, and non-fatally: run credits are not implemented by the
-    // backend yet, and a 404 there must not blank the points the user does have.
+    // backend yet, and a 404 there must not blank the stars the user does have.
     try {
       set({ entitlement: await runApi.getEntitlement(), entitlementError: undefined });
     } catch (error) {
@@ -108,8 +98,13 @@ export const useRunStore = create<RunState>((set, get) => ({
   },
 
   previewReward(session, rejectedPoints) {
-    const { pointsEarnedToday, multiplier } = get();
-    return calculateReward(session, { pointsEarnedToday, multiplier, rejectedPoints });
+    const { profile } = get();
+    return calculateReward(session, {
+      stepsToday: profile.stepsToday,
+      starsEarnedToday: profile.starsEarnedToday,
+      shoeTier: profile.shoeTier,
+      rejectedPoints,
+    });
   },
 
   async submitRun(session, rejectedPoints) {
@@ -118,11 +113,15 @@ export const useRunStore = create<RunState>((set, get) => ({
     const summary = await runApi.submitRun(session, rejectedPoints);
     set((state) => ({
       history: [summary, ...state.history],
-      pointsBalance: state.pointsBalance + summary.reward.points,
-      pointsEarnedToday: state.pointsEarnedToday + summary.reward.points,
+      profile: {
+        ...state.profile,
+        starsBalance: state.profile.starsBalance + summary.reward.stars,
+        starsEarnedToday: state.profile.starsEarnedToday + summary.reward.stars,
+        stepsToday: summary.reward.stepsToday,
+      },
     }));
-    // The credit was spent and the star awarded server-side, so the balances
-    // are re-read rather than guessed at here.
+    // The credit was spent server-side, so the balance is re-read rather than
+    // guessed at here.
     try {
       set({ entitlement: await runApi.getEntitlement(), entitlementError: undefined });
     } catch (error) {
@@ -131,17 +130,17 @@ export const useRunStore = create<RunState>((set, get) => ({
     return summary;
   },
 
-  async redeemPoints(points, toAddress) {
-    set({ redeeming: true, error: undefined });
+  async exchangeStars(stars, toAddress) {
+    set({ exchanging: true, error: undefined });
     try {
-      const result = await runApi.redeemPoints(points, toAddress);
+      const result = await runApi.exchangeStars(stars, toAddress);
       set((state) => ({
-        pointsBalance: state.pointsBalance - points,
-        redeeming: false,
+        profile: { ...state.profile, starsBalance: result.starsBalance },
+        exchanging: false,
       }));
-      return result;
+      return { txHash: result.txHash, alli: result.alli };
     } catch (error) {
-      set({ redeeming: false, error: (error as Error).message });
+      set({ exchanging: false, error: (error as Error).message });
       throw error;
     }
   },
@@ -155,18 +154,6 @@ export const useRunStore = create<RunState>((set, get) => ({
       set({ entitlement: await runApi.buyRuns(count), buying: false, entitlementError: undefined });
     } catch (error) {
       set({ buying: false, error: (error as Error).message });
-      throw error;
-    }
-  },
-
-  async exchangeStars(stars, toAddress) {
-    set({ exchanging: true, error: undefined });
-    try {
-      const result = await runApi.exchangeStars(stars, toAddress);
-      set({ entitlement: result.entitlement, exchanging: false, entitlementError: undefined });
-      return { txHash: result.txHash, alli: result.alli };
-    } catch (error) {
-      set({ exchanging: false, error: (error as Error).message });
       throw error;
     }
   },

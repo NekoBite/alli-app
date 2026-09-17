@@ -3,29 +3,27 @@ import { randomUUID } from 'node:crypto';
 import { after, beforeEach, describe, it } from 'node:test';
 
 import { pool } from '../src/db/pool.ts';
-import { REWARD_RULES } from '../src/shared/run.ts';
+import { REWARD_RULES, SHOES } from '../src/shared/run.ts';
 import {
+  failExchange,
   getProfile,
-  openRedemption,
-  failRedemption,
-  streakMultiplier,
+  openExchange,
   submitRun,
 } from '../src/run/service.ts';
-import {
-  createUser,
-  DAY,
-  drivingTrack,
-  goodTrack,
-  setupDb,
-  stationaryTrack,
-  stepSamples,
-} from './helpers.ts';
+import { createUser, DAY, drivingTrack, goodTrack, setupDb, stationaryTrack, stepSamples } from './helpers.ts';
 
 // File-scoped: closing the pool inside a suite would pull it out from under
 // every suite that runs after it.
 after(async () => pool.end());
 
-describe('run rewards', () => {
+/** 600 fixes at 50 steps per 5 of them: exactly the quest's 6,000 steps. */
+const QUEST_FIXES = 600;
+
+async function setShoeTier(userId: string, tier: 'leather' | 'silver' | 'gold'): Promise<void> {
+  await pool.query('UPDATE users SET shoe_tier = $2 WHERE id = $1', [userId, tier]);
+}
+
+describe('daily quest', () => {
   beforeEach(setupDb);
 
   /**
@@ -45,18 +43,86 @@ describe('run rewards', () => {
     };
   };
 
-  it('awards points from the steps it re-credited itself', async () => {
+  /** A run that clears the whole quest on its own. */
+  const questRun = (over: Partial<Parameters<typeof submitRun>[1]> = {}) =>
+    run({ track: goodTrack(QUEST_FIXES), ...over });
+
+  it('banks steps from the re-credited samples without paying early', async () => {
     const userId = await createUser();
     const result = await submitRun(userId, run());
 
-    // 20 windows of 50 steps = 1,000 steps, at 100 points per 1,000.
+    // 20 windows of 50 steps = 1,000 steps, well short of the 6,000 goal.
     assert.deepEqual(result.reward.flags, []);
-    assert.equal(result.reward.steps, 1000);
-    assert.equal(result.reward.points, 100);
+    assert.equal(result.reward.eligibleSteps, 1000);
+    assert.equal(result.reward.stepsToday, 1000);
+    assert.equal(result.reward.questCompleted, false);
+    assert.equal(result.reward.stars, 0);
 
     const profile = await getProfile(userId, DAY);
-    assert.equal(profile.pointsBalance, result.reward.points);
-    assert.equal(profile.pointsEarnedToday, result.reward.points);
+    assert.equal(profile.stepsToday, 1000);
+    assert.equal(profile.starsBalance, 0);
+  });
+
+  it('pays one star when the day crosses the goal, counting earlier runs', async () => {
+    const userId = await createUser();
+    // Five short runs bank 5,000; the sixth carries the day over 6,000.
+    for (let i = 0; i < 5; i += 1) {
+      const result = await submitRun(userId, run());
+      assert.equal(result.reward.stars, 0);
+    }
+
+    const completing = await submitRun(userId, run());
+    assert.equal(completing.reward.stepsToday, REWARD_RULES.dailyStepGoal);
+    assert.equal(completing.reward.questPaid, true);
+    assert.equal(completing.reward.stars, REWARD_RULES.starsPerQuest);
+
+    const profile = await getProfile(userId, DAY);
+    assert.equal(profile.starsBalance, REWARD_RULES.starsPerQuest);
+    assert.equal(profile.starsEarnedToday, REWARD_RULES.starsPerQuest);
+  });
+
+  it('scales the star by the account shoe tier, from the server', async () => {
+    const userId = await createUser();
+    await setShoeTier(userId, 'gold');
+
+    const result = await submitRun(userId, questRun());
+
+    assert.equal(result.reward.shoeMultiplier, SHOES.gold.rewardMultiplier);
+    assert.equal(result.reward.stars, SHOES.gold.rewardMultiplier);
+    assert.equal((await getProfile(userId, DAY)).starsBalance, SHOES.gold.rewardMultiplier);
+  });
+
+  it('issues the free tier to a new account', async () => {
+    const userId = await createUser();
+    assert.equal((await getProfile(userId, DAY)).shoeTier, 'leather');
+  });
+
+  it('pays the quest once a day — later runs bank steps only', async () => {
+    const userId = await createUser();
+    await submitRun(userId, questRun());
+    const second = await submitRun(userId, questRun());
+
+    assert.equal(second.reward.questCompleted, true);
+    assert.equal(second.reward.questPaid, false);
+    assert.equal(second.reward.stars, 0);
+
+    const profile = await getProfile(userId, DAY);
+    assert.equal(profile.starsBalance, REWARD_RULES.starsPerQuest, 'one star, not two');
+    assert.ok(profile.stepsToday > REWARD_RULES.dailyStepGoal, 'but the steps still banked');
+  });
+
+  it('holds the once-a-day rule against concurrent submissions', async () => {
+    const userId = await createUser();
+
+    // Ten quest-clearing runs at once. Without the row lock in submitRun each
+    // would read "no star yet today" and each would pay one.
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => submitRun(userId, questRun())),
+    );
+
+    const stars = results.reduce((sum, r) => sum + r.reward.stars, 0);
+    assert.equal(stars, REWARD_RULES.starsPerQuest, 'exactly one quest paid, no more');
+    assert.equal((await getProfile(userId, DAY)).starsBalance, REWARD_RULES.starsPerQuest);
   });
 
   it('ignores whatever the client claims and trusts only the raw track', async () => {
@@ -67,10 +133,8 @@ describe('run rewards', () => {
     const result = await submitRun(userId, run({ track: goodTrack(4) }));
 
     assert.ok(result.reward.flags.includes('too-short'));
-    assert.equal(result.reward.points, 0);
-
-    const profile = await getProfile(userId, DAY);
-    assert.equal(profile.pointsBalance, 0);
+    assert.equal(result.reward.eligibleSteps, 0);
+    assert.equal((await getProfile(userId, DAY)).stepsToday, 0);
   });
 
   it('rejects a run at vehicle speed', async () => {
@@ -78,7 +142,7 @@ describe('run rewards', () => {
     const result = await submitRun(userId, run({ track: drivingTrack(100) }));
 
     assert.ok(result.reward.flags.includes('pace-too-fast'));
-    assert.equal(result.reward.points, 0);
+    assert.equal(result.reward.eligibleSteps, 0);
   });
 
   it('records a rejected run but writes no ledger entry', async () => {
@@ -86,58 +150,24 @@ describe('run rewards', () => {
     await submitRun(userId, run({ track: drivingTrack(100) }));
 
     const runs = await pool.query('SELECT 1 FROM runs WHERE user_id = $1', [userId]);
-    const ledger = await pool.query('SELECT 1 FROM points_ledger WHERE user_id = $1', [userId]);
+    const ledger = await pool.query('SELECT 1 FROM star_ledger WHERE user_id = $1', [userId]);
     assert.equal(runs.rowCount, 1, 'the run is kept so the user can see why it failed');
     assert.equal(ledger.rowCount, 0, 'but nothing moved');
   });
 
   it('credits a resubmitted run exactly once', async () => {
     const userId = await createUser();
-    const payload = run();
+    const payload = questRun();
 
     const first = await submitRun(userId, payload);
     const second = await submitRun(userId, payload);
 
     assert.equal(first.id, second.id, 'the same run row comes back');
-    assert.equal(second.reward.points, first.reward.points);
+    assert.equal(second.reward.stars, first.reward.stars);
 
     const profile = await getProfile(userId, DAY);
-    assert.equal(profile.pointsBalance, first.reward.points, 'credited once, not twice');
-  });
-
-  it('holds the daily cap against concurrent submissions', async () => {
-    const userId = await createUser();
-
-    // Ten long runs at once — 9,000 credited steps each, so any two of them
-    // clear the daily cap. Without the row lock in submitRun each would read
-    // "0 earned today" and award a full run's worth, blowing past the cap.
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () => submitRun(userId, run({ track: goodTrack(900) }))),
-    );
-
-    const total = results.reduce((sum, r) => sum + r.reward.points, 0);
-    assert.equal(total, REWARD_RULES.dailyPointsCap, 'exactly the cap, no more');
-
-    const profile = await getProfile(userId, DAY);
-    assert.equal(profile.pointsBalance, REWARD_RULES.dailyPointsCap);
-    assert.ok(
-      results.some((r) => r.reward.flags.includes('daily-cap-reached')),
-      'and the user is told why',
-    );
-  });
-
-  it('credits steps the track backs, and pays the completed-run star', async () => {
-    const userId = await createUser();
-    const track = goodTrack(100);
-    // 50 steps every 5 fixes: ~70 m of ground for a ~1.4 m stride, which is
-    // both inside the window cap and inside the stride check.
-    const result = await submitRun(userId, run({ track, stepSamples: stepSamples(track, 50) }));
-
-    assert.deepEqual(result.reward.flags, []);
-    assert.equal(result.reward.steps, 1000);
-    assert.ok(result.reward.goalReached);
-    assert.equal(result.reward.stars, REWARD_RULES.starsPerCompletedRun);
-    assert.equal(result.steps, 1000, 'the credited count is what gets stored');
+    assert.equal(profile.starsBalance, first.reward.stars, 'credited once, not twice');
+    assert.equal(profile.stepsToday, first.reward.eligibleSteps, 'and counted once');
   });
 
   it('credits nothing for steps a phone reported while standing still', async () => {
@@ -147,15 +177,13 @@ describe('run rewards', () => {
     const result = await submitRun(userId, run({ track, stepSamples: stepSamples(track, 500) }));
 
     assert.equal(result.reward.steps, 0);
-    assert.equal(result.reward.stars, 0);
-    assert.equal(result.reward.points, 0);
     assert.equal(result.reward.eligibleSteps, 0);
+    assert.equal(result.reward.stars, 0);
   });
 
   it('caps a fabricated step count at what the distance could hold', async () => {
-    const userId = await createUser();
     const track = goodTrack(100);
-    const honest = await submitRun(userId, run({ track, stepSamples: stepSamples(track, 50) }));
+    const honest = await submitRun(await createUser(), run({ track, stepSamples: stepSamples(track, 50) }));
     const inflated = await submitRun(
       await createUser(),
       run({ track, stepSamples: stepSamples(track, 100_000) }),
@@ -166,9 +194,10 @@ describe('run rewards', () => {
       'the claim is cut down to what the track supports',
     );
     assert.ok(inflated.reward.steps > honest.reward.steps, 'without punishing an honest count');
+    assert.ok(inflated.reward.steps < REWARD_RULES.dailyStepGoal, 'and not enough to buy the quest');
   });
 
-  it('pays nothing when the device sent no step samples at all', async () => {
+  it('banks nothing when the device sent no step samples at all', async () => {
     const userId = await createUser();
     // Built without the helper: the point of this case is the absent field,
     // the way a device with no pedometer uploads.
@@ -179,63 +208,66 @@ describe('run rewards', () => {
       day: DAY,
     });
 
-    // The track is a valid 1.37 km. Steps are the reward basis, so a run that
-    // reports none earns none — distance alone is not payable.
+    // The track is a valid 1.37 km. Steps are what the quest counts, so a run
+    // that reports none adds nothing — distance alone is not payable.
     assert.deepEqual(result.reward.flags, []);
     assert.ok(result.reward.eligibleMetres > 1000);
     assert.equal(result.reward.steps, 0);
-    assert.equal(result.reward.points, 0);
     assert.equal(result.reward.stars, 0);
   });
 
-  it('counts a streak only over consecutive days', async () => {
+  it('counts a streak only over consecutive completed days', async () => {
     const userId = await createUser();
-    await submitRun(userId, run({ day: '2026-09-14' }));
-    await submitRun(userId, run({ day: '2026-09-15' }));
-    await submitRun(userId, run({ day: '2026-09-16' }));
+    await submitRun(userId, questRun({ day: '2026-09-14' }));
+    await submitRun(userId, questRun({ day: '2026-09-15' }));
+    await submitRun(userId, questRun({ day: '2026-09-16' }));
 
-    const profile = await getProfile(userId, '2026-09-16');
-    assert.equal(profile.streakDays, 3);
-    assert.equal(profile.multiplier, streakMultiplier(3));
+    assert.equal((await getProfile(userId, '2026-09-16')).streakDays, 3);
   });
 
   it('breaks a streak on a missed day', async () => {
     const userId = await createUser();
-    await submitRun(userId, run({ day: '2026-09-10' }));
-    await submitRun(userId, run({ day: '2026-09-16' }));
+    await submitRun(userId, questRun({ day: '2026-09-10' }));
+    await submitRun(userId, questRun({ day: '2026-09-16' }));
 
-    const profile = await getProfile(userId, '2026-09-16');
-    assert.equal(profile.streakDays, 1);
+    assert.equal((await getProfile(userId, '2026-09-16')).streakDays, 1);
+  });
+
+  it('does not count a day that banked steps but never completed', async () => {
+    const userId = await createUser();
+    await submitRun(userId, run({ day: '2026-09-15' }));
+    await submitRun(userId, questRun({ day: '2026-09-16' }));
+
+    assert.equal((await getProfile(userId, '2026-09-16')).streakDays, 1);
   });
 });
 
-describe('redemption', () => {
+describe('star exchange', () => {
   beforeEach(setupDb);
 
   const address = '0x7A3f9C21b4E8d05F6c1A8b2D3e4F5a6B7c8D9e01';
 
-  async function givePoints(userId: string, points: number) {
+  async function giveStars(userId: string, stars: number) {
     await pool.query(
-      `INSERT INTO points_ledger (user_id, delta, reason, day, note)
+      `INSERT INTO star_ledger (user_id, delta, reason, day, note)
        VALUES ($1, $2, 'adjustment', $3, 'test fixture')`,
-      [userId, points, DAY],
+      [userId, stars, DAY],
     );
   }
 
-  it('debits points and opens a pending redemption', async () => {
+  it('debits stars and opens a pending exchange', async () => {
     const userId = await createUser();
-    await givePoints(userId, 5000);
+    await giveStars(userId, 5);
 
-    const { redemptionId, alli } = await openRedemption({
+    const { redemptionId, alli } = await openExchange({
       userId,
-      points: 2000,
+      stars: 2,
       toAddress: address,
       day: DAY,
     });
 
-    assert.equal(alli, 2);
-    const profile = await getProfile(userId, DAY);
-    assert.equal(profile.pointsBalance, 3000);
+    assert.equal(alli, 2 * REWARD_RULES.alliPerStar);
+    assert.equal((await getProfile(userId, DAY)).starsBalance, 3);
 
     const { rows } = await pool.query<{ status: string }>(
       'SELECT status FROM redemptions WHERE id = $1',
@@ -244,65 +276,61 @@ describe('redemption', () => {
     assert.equal(rows[0]!.status, 'pending');
   });
 
-  it('refuses to redeem more points than the balance', async () => {
+  it('refuses to exchange more stars than the balance', async () => {
     const userId = await createUser();
-    await givePoints(userId, 1000);
+    await giveStars(userId, 1);
 
     await assert.rejects(
-      () => openRedemption({ userId, points: 2000, toAddress: address, day: DAY }),
-      /do not have that many points/i,
+      () => openExchange({ userId, stars: 2, toAddress: address, day: DAY }),
+      /do not have that many stars/i,
     );
 
-    const profile = await getProfile(userId, DAY);
-    assert.equal(profile.pointsBalance, 1000, 'balance untouched by the failed attempt');
+    assert.equal((await getProfile(userId, DAY)).starsBalance, 1, 'balance untouched');
   });
 
-  it('refuses an amount that is not a whole ALLI', async () => {
+  it('refuses a fractional or empty amount', async () => {
     const userId = await createUser();
-    await givePoints(userId, 5000);
+    await giveStars(userId, 5);
 
     await assert.rejects(
-      () => openRedemption({ userId, points: 1500, toAddress: address, day: DAY }),
-      /multiples of/i,
+      () => openExchange({ userId, stars: 1.5, toAddress: address, day: DAY }),
+      /whole number/i,
+    );
+    await assert.rejects(
+      () => openExchange({ userId, stars: 0, toAddress: address, day: DAY }),
+      /whole number/i,
     );
   });
 
-  it('returns the points when settlement fails', async () => {
+  it('returns the stars when settlement fails', async () => {
     const userId = await createUser();
-    await givePoints(userId, 5000);
+    await giveStars(userId, 5);
 
-    const { redemptionId } = await openRedemption({
+    const { redemptionId } = await openExchange({
       userId,
-      points: 2000,
+      stars: 2,
       toAddress: address,
       day: DAY,
     });
-    assert.equal((await getProfile(userId, DAY)).pointsBalance, 3000);
+    assert.equal((await getProfile(userId, DAY)).starsBalance, 3);
 
-    await failRedemption(redemptionId, 'rpc timeout');
-
-    assert.equal((await getProfile(userId, DAY)).pointsBalance, 5000, 'points returned in full');
-    const { rows } = await pool.query<{ status: string; failure: string }>(
-      'SELECT status, failure FROM redemptions WHERE id = $1',
-      [redemptionId],
-    );
-    assert.equal(rows[0]!.status, 'failed');
-    assert.equal(rows[0]!.failure, 'rpc timeout');
+    await failExchange(redemptionId, 'relayer out of BNB');
+    assert.equal((await getProfile(userId, DAY)).starsBalance, 5, 'stars came back');
   });
 
   it('does not refund twice if the failure handler runs again', async () => {
     const userId = await createUser();
-    await givePoints(userId, 5000);
+    await giveStars(userId, 5);
 
-    const { redemptionId } = await openRedemption({
+    const { redemptionId } = await openExchange({
       userId,
-      points: 2000,
+      stars: 2,
       toAddress: address,
       day: DAY,
     });
-    await failRedemption(redemptionId, 'rpc timeout');
-    await failRedemption(redemptionId, 'rpc timeout');
+    await failExchange(redemptionId, 'first failure');
+    await failExchange(redemptionId, 'same failure, replayed');
 
-    assert.equal((await getProfile(userId, DAY)).pointsBalance, 5000, 'refunded once');
+    assert.equal((await getProfile(userId, DAY)).starsBalance, 5, 'refunded once');
   });
 });

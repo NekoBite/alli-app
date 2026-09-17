@@ -1,30 +1,39 @@
 import { isMock } from '@/config/env';
-import { calculateReward, pointsToAlli, starsToAlli } from '@/features/run/rewards';
-import { creditStepSamples } from '@/features/run/steps';
 import { RUN_CREDIT_RULES, extraRunsCost } from '@/features/run/credits';
+import { calculateReward, starsToAlli } from '@/features/run/rewards';
+import { DEFAULT_SHOE_TIER, type ShoeTier } from '@/features/run/shoes';
+import { creditStepSamples } from '@/features/run/steps';
 import type { RunEntitlement, RunSession, RunSummary } from '@/features/run/types';
 import { dayKey } from '@/utils/time';
 import { delay, request } from './client';
 
+/** What the account has earned, as the ledger sees it. */
 export type RunProfile = {
-  pointsBalance: number;
-  pointsEarnedToday: number;
-  multiplier: number;
+  /** Stars held, exchangeable for ALLI. */
+  starsBalance: number;
+  /** Stars today's quest has paid. Non-zero means today is done. */
+  starsEarnedToday: number;
+  /** GPS-credited steps banked today, across every run. */
+  stepsToday: number;
+  /** Consecutive days the quest was completed. */
   streakDays: number;
+  /** The NFT footwear tier the account holds — what scales the quest reward. */
+  shoeTier: ShoeTier;
 };
 
 export type StarExchangeResult = {
   txHash: string;
   alli: number;
-  /** The balances as they stand after the exchange — no second round trip. */
-  entitlement: RunEntitlement;
+  /** The star balance as it stands after the exchange — no second round trip. */
+  starsBalance: number;
 };
 
 export interface RunApi {
+  /** Stars, today's quest progress and the shoe tier, for the runner's local day. */
   getProfile(day: string): Promise<RunProfile>;
   /**
-   * Run credits, stars and membership. Separate from the profile because it is
-   * counted on the server's clock, not the runner's local day.
+   * Run credits and membership. Separate from the profile because it is counted
+   * on the server's clock, not the runner's local day.
    */
   getEntitlement(): Promise<RunEntitlement>;
   getHistory(): Promise<RunSummary[]>;
@@ -35,13 +44,13 @@ export interface RunApi {
    */
   submitRun(session: RunSession, rejectedPoints: number): Promise<RunSummary>;
   /**
-   * Burns points and sends the matching ALLI on-chain.
+   * Burns stars and sends the matching ALLI on-chain.
    *
    * `toAddress` is explicit rather than looked up server-side: the backend
    * stores a wallet address per account, but paying out to a stale one because
    * the device changed wallets is not a mistake you can take back.
    */
-  redeemPoints(points: number, toAddress: string): Promise<{ txHash: string; alli: number }>;
+  exchangeStars(stars: number, toAddress: string): Promise<StarExchangeResult>;
   /**
    * Buys extra run credits.
    *
@@ -51,8 +60,6 @@ export interface RunApi {
    * README §1 — until that is made, the mock simply grants the credits.
    */
   buyRuns(count: number): Promise<RunEntitlement>;
-  /** Exchanges stars for ALLI on-chain, at `REWARD_RULES.alliPerStar`. */
-  exchangeStars(stars: number, toAddress: string): Promise<StarExchangeResult>;
   /** Renews the membership for another month and grants its run credits. */
   renewMembership(): Promise<RunEntitlement>;
 }
@@ -66,14 +73,15 @@ const live: RunApi = {
    * Sends the raw track and nothing else that matters.
    *
    * Note what is deliberately NOT in this body: distance, moving time, the
-   * rejected-fix count, the credited step count, and the points and stars the
-   * screen showed. The server recomputes all of them from `track` and
-   * `stepSamples` with the same functions that produced the on-screen preview,
-   * so there is nowhere for a modified client to put a better number. The
-   * pedometer's raw totals have to be sent — the server cannot read the sensor —
-   * but they are re-credited against the ground the track says was covered, so
-   * a fabricated total buys nothing. `rejectedPoints` stays in the signature
-   * only because the mock needs it to reproduce the preview offline.
+   * rejected-fix count, the credited step count, the day's running total, the
+   * shoe multiplier and the stars the screen showed. The server recomputes all
+   * of them from `track` and `stepSamples` with the same functions that produced
+   * the on-screen preview, so there is nowhere for a modified client to put a
+   * better number. The pedometer's raw totals have to be sent — the server
+   * cannot read the sensor — but they are re-credited against the ground the
+   * track says was covered, so a fabricated total buys nothing.
+   * `rejectedPoints` stays in the signature only because the mock needs it to
+   * reproduce the preview offline.
    */
   submitRun: (session) =>
     request('/v1/run/runs', {
@@ -84,30 +92,29 @@ const live: RunApi = {
         endedAt: session.endedAt,
         track: session.track,
         stepSamples: session.stepSamples,
-        // The runner's local day, so the daily cap resets at their midnight.
+        // The runner's local day, so the quest resets at their midnight.
         day: dayKey(new Date(session.startedAt)),
       },
     }),
 
-  redeemPoints: (points, toAddress) =>
-    request('/v1/run/redeem', {
+  exchangeStars: (stars, toAddress) =>
+    request('/v1/run/stars/exchange', {
       method: 'POST',
-      body: { points, toAddress, day: dayKey() },
+      body: { stars, toAddress, day: dayKey() },
     }),
 
   buyRuns: (count) => request('/v1/run/credits', { method: 'POST', body: { runs: count } }),
-
-  exchangeStars: (stars, toAddress) =>
-    request('/v1/run/stars/exchange', { method: 'POST', body: { stars, toAddress } }),
 
   renewMembership: () => request('/v1/run/membership/renew', { method: 'POST' }),
 };
 
 let mockProfile: RunProfile = {
-  pointsBalance: 2_450,
-  pointsEarnedToday: 180,
-  multiplier: 1.05,
+  starsBalance: 3,
+  starsEarnedToday: 0,
+  stepsToday: 0,
   streakDays: 4,
+  // The tier every account starts on, issued free at registration.
+  shoeTier: DEFAULT_SHOE_TIER,
 };
 
 const DAY_MS = 86_400_000;
@@ -116,8 +123,6 @@ let mockEntitlement: RunEntitlement = {
   runsLeft: 68,
   runsThisMonth: 0,
   extraRunsBoughtThisMonth: 0,
-  stars: 3,
-  starsToday: 0,
   membership: {
     status: 'active',
     activeUntil: Date.now() + 14 * DAY_MS,
@@ -153,8 +158,9 @@ const mock: RunApi = {
     const reward = calculateReward(
       { ...session, steps },
       {
-        pointsEarnedToday: mockProfile.pointsEarnedToday,
-        multiplier: mockProfile.multiplier,
+        stepsToday: mockProfile.stepsToday,
+        starsEarnedToday: mockProfile.starsEarnedToday,
+        shoeTier: mockProfile.shoeTier,
         rejectedPoints,
       },
     );
@@ -170,8 +176,9 @@ const mock: RunApi = {
     mockHistory = [summary, ...mockHistory];
     mockProfile = {
       ...mockProfile,
-      pointsBalance: mockProfile.pointsBalance + reward.points,
-      pointsEarnedToday: mockProfile.pointsEarnedToday + reward.points,
+      starsBalance: mockProfile.starsBalance + reward.stars,
+      starsEarnedToday: mockProfile.starsEarnedToday + reward.stars,
+      stepsToday: reward.stepsToday,
     };
     // A recorded run costs a credit whatever it earned, which is what "runs
     // left" means. The server does this inside the same transaction that
@@ -180,17 +187,22 @@ const mock: RunApi = {
       ...mockEntitlement,
       runsLeft: Math.max(0, mockEntitlement.runsLeft - 1),
       runsThisMonth: mockEntitlement.runsThisMonth + 1,
-      stars: mockEntitlement.stars + reward.stars,
-      starsToday: mockEntitlement.starsToday + reward.stars,
     };
     return delay(summary, 700);
   },
 
-  async redeemPoints(points) {
-    if (points > mockProfile.pointsBalance) throw new Error('Not enough points to redeem.');
-    mockProfile = { ...mockProfile, pointsBalance: mockProfile.pointsBalance - points };
+  async exchangeStars(stars) {
+    const count = Math.floor(stars);
+    if (count <= 0) throw new Error('Exchange a whole number of stars.');
+    if (count > mockProfile.starsBalance) throw new Error('You do not have that many stars.');
+
+    mockProfile = { ...mockProfile, starsBalance: mockProfile.starsBalance - count };
     return delay(
-      { txHash: `0xmock${Date.now().toString(16).padStart(60, '0')}`, alli: pointsToAlli(points) },
+      {
+        txHash: `0xmock${Date.now().toString(16).padStart(60, '0')}`,
+        alli: starsToAlli(count),
+        starsBalance: mockProfile.starsBalance,
+      },
       900,
     );
   },
@@ -211,22 +223,6 @@ const mock: RunApi = {
       extraRunsBoughtThisMonth: mockEntitlement.extraRunsBoughtThisMonth + runs,
     };
     return delay(readEntitlement(), 700);
-  },
-
-  async exchangeStars(stars) {
-    const count = Math.floor(stars);
-    if (count <= 0) throw new Error('Exchange a whole number of stars.');
-    if (count > mockEntitlement.stars) throw new Error('You do not have that many stars.');
-
-    mockEntitlement = { ...mockEntitlement, stars: mockEntitlement.stars - count };
-    return delay(
-      {
-        txHash: `0xmock${Date.now().toString(16).padStart(60, '0')}`,
-        alli: starsToAlli(count),
-        entitlement: readEntitlement(),
-      },
-      900,
-    );
   },
 
   async renewMembership() {

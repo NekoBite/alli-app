@@ -1,4 +1,4 @@
-import { creditStepSamples, creditStepWindow, creditSteps, goalProgress, STEP_RULES } from './steps';
+import { creditStepSamples, creditStepWindow, creditSteps, STEP_RULES } from './steps';
 import type { GeoPoint, StepSample } from './types';
 
 describe('creditStepWindow', () => {
@@ -39,17 +39,6 @@ describe('creditSteps', () => {
 
   it('is zero for an empty run', () => {
     expect(creditSteps([])).toEqual({ steps: 0, dropped: 0 });
-  });
-});
-
-describe('goalProgress', () => {
-  it('reports a fraction of the goal', () => {
-    expect(goalProgress(50, 200)).toBe(0.25);
-  });
-
-  it('clamps past the goal and below zero', () => {
-    expect(goalProgress(400, 200)).toBe(1);
-    expect(goalProgress(-10, 200)).toBe(0);
   });
 });
 

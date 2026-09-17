@@ -1,4 +1,4 @@
-# Handoff — ALLI RUN (runs → points and stars → ALLI)
+# Handoff — ALLI RUN (steps → the daily quest → stars → ALLI)
 
 _Verified 2026-09-17 on `claude/modest-newton-k1t5dj`._
 
@@ -8,14 +8,14 @@ Repo: [NekoBite/alli-app](https://github.com/NekoBite/alli-app).
 
 A user records a run. The phone measures it — distance from GPS, steps from the
 pedometer, and steps only where GPS movement backs them up — and shows a live
-estimate. The server independently recomputes what the run was worth from the raw
-track and the raw pedometer totals, credits points to a ledger, awards a star if
-the run completed, and — once the ALLI token exists — pays them out on BNB Smart
-Chain.
+estimate. The server independently recomputes the run from the raw track and the
+raw pedometer totals, banks its steps against the day, and when the day crosses
+**6,000 GPS-verified steps** pays one star, multiplied by the tier of NFT
+footwear the account holds. Stars exchange for **ALLI** on BNB Smart Chain.
 
-Recording a run spends a **run credit**. Credits come from a monthly membership
-or are bought outright, and they never expire. They are what bounds star
-emission, the way the daily cap bounds points.
+The quest pays **once a day**, however many runs it took. Recording a run spends
+a **run credit**; credits come from a monthly membership or are bought outright,
+and they never expire.
 
 See it running in about two minutes:
 
@@ -25,10 +25,9 @@ npm start          # scan the QR with the iPhone Camera app, open in Expo Go
 ```
 
 It runs with no backend and no chain: `EXPO_PUBLIC_DATA_SOURCE` defaults to
-`mock`. Press **Start a run** and distance, speed, steps and points climb from a
-synthesised track and pedometer. The 200-step goal falls at about a minute; the
-run clears the 300 m minimum at about two, and from there finishing it pays
-points and a star.
+`mock`. Press **Start a run** and steps, distance and speed climb from a
+synthesised track and pedometer, which play at 20× — the 6,000-step quest
+completes in about a minute and a half of wall clock instead of half an hour.
 
 `EXPO_PUBLIC_MOCK_SENSORS=off` keeps the API mocked but reads the real GPS and
 pedometer — the combination you want on a device.
@@ -41,7 +40,8 @@ pedometer — the combination you want on a device.
 |---|---|
 | `src/features/run/geo.ts` | `summarizeTrack` — drops bad fixes, sums real distance and moving time |
 | `src/features/run/steps.ts` | `creditStepSamples` — pairs pedometer windows with ground covered |
-| `src/features/run/rewards.ts` | `calculateReward` + `REWARD_RULES` — points, the step goal and the star |
+| `src/features/run/rewards.ts` | `calculateReward` + `REWARD_RULES` — the quest, its goal and its star |
+| `src/features/run/shoes.ts` | `SHOES` — the tier multipliers the quest reward scales by |
 | `src/features/run/types.ts` | `GeoPoint`, `StepSample`, `RewardBreakdown`, `RunEntitlement` |
 
 **App**
@@ -52,8 +52,8 @@ pedometer — the combination you want on a device.
 | `src/features/run/draft.ts` | The in-progress run on disk, so a closed app does not lose it |
 | `src/features/run/credits.ts` | `RUN_CREDIT_RULES` — price, monthly ceiling, whether a run may start |
 | `src/features/run/goals.ts` | The 7-day goal strip, derived from history rather than stored |
-| `src/features/run/store.ts` | Points, entitlement, history, redemption, purchases, star exchange |
-| `app/(tabs)/run.tsx` | Run balance, week strip, points, recent runs |
+| `src/features/run/store.ts` | Profile (stars, quest, shoe), entitlement, history, purchases, star exchange |
+| `app/(tabs)/run.tsx` | Today's quest, run balance, stars, shoe tier, week strip, recent runs |
 | `app/run/active.tsx` | The live run screen |
 | `app/run/summary.tsx` | Post-run breakdown, including why a run was rejected |
 | `app/run/credits.tsx` | Buy extra runs, renew the membership |
@@ -68,15 +68,16 @@ pedometer — the combination you want on a device.
 | `server/src/run/service.ts` | The trust boundary. Recompute, re-credit steps, cap, ledger, redemption |
 | `server/src/run/routes.ts` | HTTP surface |
 | `server/migrations/001_init.sql` | Schema, with the reasoning in comments |
+| `server/migrations/002_stars.sql` | Points ledger → star ledger, plus `users.shoe_tier` |
 
 ## Invariants
 
 **The server recomputes; it never accepts a client's numbers.** `submitRun`
 takes the raw track and the raw pedometer totals and runs `summarizeTrack`,
 `creditStepSamples` and `calculateReward` itself. Distance, moving time,
-rejected-fix count, credited steps, points, stars and the multiplier are absent
-from the request body entirely — there is nowhere to put a lie. Accept any of
-them and the phone can mint tokens.
+rejected-fix count, credited steps, the day's running total, the shoe multiplier
+and the stars are absent from the request body entirely — there is nowhere to put
+a lie. Accept any of them and the phone can mint tokens.
 
 **Steps are credited against ground covered, never taken at face value.** The
 pedometer is the easiest sensor to fake — shaking the phone produces a clean
@@ -91,17 +92,17 @@ writing a second `calculateReward`, stop: the first symptom of drift is a user
 shown one number on the phone and credited another by the server, which is
 indistinguishable from theft from the user's side.
 
-**The daily cap is read and written under a row lock.** `submitRun` does
-`SELECT … FOR UPDATE` on the user before reading today's total. Drop it and two
-runs uploaded at the same instant each read "0 earned today" and each award a
-full cap. There is a test that fires ten concurrent submissions and asserts the
-total is exactly the cap — if you refactor the transaction, keep that test green.
+**The quest is read and written under a row lock.** `submitRun` does
+`SELECT … FOR UPDATE` on the user before reading the day's step total. Drop it
+and two runs uploaded at the same instant each read "no star yet today" and each
+pay one. There is a test that fires ten quest-clearing submissions and asserts
+exactly one star comes out — if you refactor the transaction, keep it green.
 
-**Redemption debits before it pays.** Points come out and a `pending` row is
+**The exchange debits before it pays.** Stars come out and a `pending` row is
 committed, *then* the transfer broadcasts. The reverse order pays out tokens
 the ledger never charged for if the process dies in between.
 
-**Points are `SUM(delta)` over an append-only ledger, not a column.** Slower to
+**Stars are `SUM(delta)` over an append-only ledger, not a column.** Slower to
 read, possible to audit. Every credit and debit is a row.
 
 ## Decisions already made
@@ -122,24 +123,21 @@ float's balance rather than at total supply.
 **Any validation flag zeroes the run.** Not partial credit — partial credit
 gives a cheat a dial to tune against.
 
-**The reward constants are placeholders, not a balanced economy.** 100 points
-per 1,000 credited steps, 1,000 points = 1 ALLI, 1,000/day cap; one star per completed
-run at 1,000 ALLI each, 25 USDT for 30 run credits. They belong server-side
-before launch so they can be tuned without an app release. See
-`docs/architecture.md` §4 for the emission problem that is still unsolved — and
-note the star and the point scales have not been reconciled with each other.
+**The reward constants are placeholders, not a balanced economy.** 6,000 steps a
+day, one star at 1,000 ALLI, tier multipliers 1/3/5, 25 USDT for 30 run credits.
+They belong server-side before launch so they can be tuned without an app
+release. See `docs/architecture.md` §4 — the shoe tier is the emission curve, and
+nothing sells the shoes yet.
 
 **Steps pay; distance is the evidence.** The kilometre figure is measured,
-shown and used to validate — pace, stride, the 300 m minimum — but points come
-from the GPS-backed step count, so a spoofed track with no steps behind it earns
+shown and used to validate — pace, stride, the 300 m minimum — but the quest
+counts GPS-backed steps, so a spoofed track with no steps behind it earns
 nothing, and a device with no pedometer earns nothing either. The run screen
 says so while the run is live rather than after it.
 
-**A run pays in two currencies, bounded differently.** Points accrue per
-1,000 credited steps under a daily cap. A star is paid once per *completed* run —
-200 GPS-backed steps, no validation flags — and is bounded by run credits, which
-cost money. Hitting the daily point cap does not cost the star; that is
-deliberate, and there is a test for it.
+**The quest is a day, not a run.** Five short walks that add to 6,000 steps pay
+exactly what one long one does. A flagged run contributes nothing to the total,
+and once the day has paid, later runs bank steps and nothing else.
 
 **A recorded run spends a credit whatever it earned.** "Runs left" means runs you
 can record, not runs that paid. The client checks the balance before letting a
@@ -159,14 +157,17 @@ Until that lands, the client-side rules raise the cost of faking a run without
 preventing it, and the daily cap is the only real bound on emission. The repo
 is public, so the exact thresholds are readable by anyone.
 
-**Run credits, stars and membership exist only client-side.** `GET
-/v1/run/entitlement`, `POST /v1/run/credits`, `POST /v1/run/stars/exchange` and
-`POST /v1/run/membership/renew` are defined and mocked in
-`src/services/api/run.ts`; the server answers none of them. There is no credit
-ledger, no star ledger, no membership table, and nothing charges USDT. The store
-treats a missing entitlement as non-fatal — the points half of the screen keeps
-working and the server stays the one to refuse a run. **This is the largest gap
-in the run loop** and the natural companion to the sign-in work below.
+**Run credits and membership exist only client-side.** `GET /v1/run/entitlement`,
+`POST /v1/run/credits` and `POST /v1/run/membership/renew` are defined and mocked
+in `src/services/api/run.ts`; the server answers none of them. There is no credit
+ledger, no membership table, and nothing charges USDT. The store treats a missing
+entitlement as non-fatal — the quest half of the screen keeps working and the
+server stays the one to refuse a run. **This is the largest gap left in the run
+loop.**
+
+**Nothing sells a shoe.** `users.shoe_tier` is stored, defaults to Leather and is
+honoured by the reward math, but there is no mint, no marketplace and no upgrade
+path, so every account earns 1×.
 
 **No background location.** `useRunSession` subscribes in the foreground only.
 iOS suspends the app when the screen locks and the track ends mid-run. The draft
@@ -174,11 +175,11 @@ in `draft.ts` softens it — a killed run can be resumed — but does not fix it
 Shipping needs `expo-task-manager`; the permissions are already declared in
 `app.json`.
 
-**No reconciler.** A crash between the points debit and the on-chain transfer
+**No reconciler.** A crash between the star debit and the on-chain transfer
 leaves a `pending` redemption. `redemptions_pending_idx` exists to find them;
 the job that does not.
 
-**ALLI is not deployed.** Redemption throws 503 before touching points.
+**ALLI is not deployed.** The exchange throws 503 before touching stars.
 
 ## Traps
 
@@ -225,7 +226,7 @@ Run on `claude/modest-newton-k1t5dj` on 2026-09-17:
 | `npm run typecheck` | clean |
 | `npm test` | 64 passed |
 | `npm run typecheck --workspace server` | clean |
-| `npm test --workspace server` | 17 passed, 0 failed, 0 skipped |
+| `npm test --workspace server` | 21 passed, 0 failed, 0 skipped |
 
 CI runs all of these plus Android and iOS bundles on every PR, and the five
 checks are required by branch protection on `main`.
@@ -237,7 +238,7 @@ the backend that already exists: email entry → code entry → store the token 
 `SECURE_KEYS.session` → the existing `request()` picks it up automatically.
 Until it exists, nothing in the app can be tested against real data.
 
-**Then the credit and star ledgers.** Two more append-only tables shaped like
-`points_ledger`, a membership row, and the four endpoints above. Without them the
-run balance on the ALLI RUN tab is a mock, and a star a runner earned is computed
-and then dropped on the floor.
+**Then the credit ledger.** One more append-only table shaped like `star_ledger`,
+a membership row, and the three endpoints above. Without them the run balance on
+the ALLI RUN tab is a mock — the star half is real and already writes to
+Postgres.

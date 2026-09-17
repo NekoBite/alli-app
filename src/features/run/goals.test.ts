@@ -4,28 +4,29 @@ import type { RunSummary } from './types';
 const DAY = 86_400_000;
 /** Midday, so a timezone offset cannot push a fixture into the previous day. */
 const NOW = new Date(2026, 8, 17, 12, 0, 0).getTime();
+const GOAL = GOAL_RULES.dailyStepGoal;
 
-function run(daysAgo: number, steps: number, overrides: Partial<RunSummary> = {}): RunSummary {
+function run(daysAgo: number, steps: number, stars = 0): RunSummary {
   return {
-    id: `run-${daysAgo}-${steps}`,
+    id: `run-${daysAgo}-${steps}-${stars}`,
     startedAt: NOW - daysAgo * DAY,
     track: [],
-    distanceMetres: 2000,
+    distanceMetres: steps * 0.8,
     movingSeconds: 600,
     confirmed: true,
     reward: {
-      eligibleMetres: 2000,
-      eligibleSteps: steps,
-      basePoints: 200,
-      multiplier: 1,
-      grossPoints: 200,
-      points: 200,
+      eligibleMetres: steps * 0.8,
       steps,
-      goalReached: steps >= GOAL_RULES.dailyStepGoal,
-      stars: steps >= GOAL_RULES.dailyStepGoal ? 1 : 0,
+      eligibleSteps: steps,
+      stepsToday: steps,
+      questGoal: GOAL,
+      questCompleted: steps >= GOAL,
+      questPaid: stars > 0,
+      shoeMultiplier: 1,
+      baseStars: stars > 0 ? 1 : 0,
+      stars,
       flags: [],
     },
-    ...overrides,
   };
 }
 
@@ -43,36 +44,35 @@ describe('weekGoals', () => {
   });
 
   it('sums a day that holds several runs', () => {
-    const week = weekGoals([run(0, 120), run(0, 150)], NOW);
+    const week = weekGoals([run(0, 1200), run(0, 1500)], NOW);
     const today = week[week.length - 1]!;
     expect(today.runs).toBe(2);
-    expect(today.steps).toBe(270);
-    expect(today.metres).toBe(4000);
-    expect(today.points).toBe(400);
+    expect(today.steps).toBe(2700);
+    expect(today.metres).toBeCloseTo(2700 * 0.8, 5);
   });
 
-  it('marks a day met once its steps clear the goal, across runs', () => {
-    const week = weekGoals([run(0, 120), run(0, 150)], NOW);
-    expect(week[week.length - 1]!.goalMet).toBe(true);
+  it('marks a day met once its steps clear the quest goal, across runs', () => {
+    const met = weekGoals([run(0, GOAL - 500), run(0, 500, 1)], NOW);
+    expect(met[met.length - 1]!.questMet).toBe(true);
+    expect(met[met.length - 1]!.stars).toBe(1);
 
-    const short = weekGoals([run(0, 120)], NOW);
-    expect(short[short.length - 1]!.goalMet).toBe(false);
+    const short = weekGoals([run(0, GOAL - 1)], NOW);
+    expect(short[short.length - 1]!.questMet).toBe(false);
   });
 
   it('ignores runs older than the window', () => {
-    const week = weekGoals([run(GOAL_RULES.weekDays, 500)], NOW);
+    const week = weekGoals([run(GOAL_RULES.weekDays, GOAL)], NOW);
     expect(weekTotals(week).runs).toBe(0);
   });
 });
 
 describe('weekTotals', () => {
-  it('adds up the window, counting only the days that were met', () => {
-    const totals = weekTotals(weekGoals([run(0, 300), run(2, 100), run(4, 250)], NOW));
+  it('adds up the window, counting only the days whose quest was met', () => {
+    const totals = weekTotals(weekGoals([run(0, GOAL, 1), run(2, 100), run(4, GOAL, 3)], NOW));
     expect(totals.days).toBe(GOAL_RULES.weekDays);
     expect(totals.runs).toBe(3);
-    expect(totals.goalDays).toBe(2);
-    expect(totals.steps).toBe(650);
-    expect(totals.stars).toBe(2);
-    expect(totals.movingSeconds).toBe(1800);
+    expect(totals.questDays).toBe(2);
+    expect(totals.steps).toBe(GOAL * 2 + 100);
+    expect(totals.stars).toBe(4);
   });
 });

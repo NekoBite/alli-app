@@ -30,11 +30,22 @@ export type { StepWindow, StepCredit } from '../../../src/features/run/steps.ts'
 
 export {
   calculateReward,
-  pointsToAlli,
-  alliToPoints,
+  starsToAlli,
+  questProgress,
+  stepsToGo,
   explainFlag,
   REWARD_RULES,
 } from '../../../src/features/run/rewards.ts';
+
+export {
+  DEFAULT_SHOE_TIER,
+  SHOES,
+  SHOE_ORDER,
+  shoeFor,
+  shoeMultiplier,
+} from '../../../src/features/run/shoes.ts';
+
+export type { Shoe, ShoeTier } from '../../../src/features/run/shoes.ts';
 
 export type {
   GeoPoint,
