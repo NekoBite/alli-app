@@ -79,14 +79,27 @@ export default function RunSummaryScreen() {
         <Text variant="caption" color={colors.ink2}>
           {reward.goalReached
             ? 'Only steps backed by GPS movement counted towards the goal.'
-            : `A run pays a star once ${formatPoints(REWARD_RULES.stepGoal)} GPS-backed steps are recorded. The distance still earned points.`}
+            : `A run pays a star once ${formatPoints(REWARD_RULES.stepGoal)} GPS-backed steps are recorded. The steps below the goal still earned points.`}
         </Text>
       </Card>
 
       <Card style={styles.card} tone="muted">
         <Text variant="heading">How this was calculated</Text>
-        <Row label="Validated distance" value={`${formatDistance(reward.eligibleMetres)} km`} />
-        <Row label="Base points" value={formatPoints(reward.basePoints)} />
+        <Row label="Steps that counted" value={formatPoints(reward.eligibleSteps)} />
+        <Row
+          label={`Points per ${formatPoints(1000)} steps`}
+          value={formatPoints(REWARD_RULES.pointsPerThousandSteps)}
+        />
+        <Row
+          label="Base points"
+          // Kept fractional: 425 steps is 42.5 points, and rounding it here
+          // makes the multiplier line below look like it does not add up.
+          value={
+            Number.isInteger(reward.basePoints)
+              ? formatPoints(reward.basePoints)
+              : reward.basePoints.toFixed(1)
+          }
+        />
         <Row label="Multiplier" value={`${reward.multiplier.toFixed(2)}×`} />
         <Row label="Before daily cap" value={formatPoints(reward.grossPoints)} />
         <Row label="Awarded" value={formatPoints(reward.points)} valueColor={colors.green} emphasis />

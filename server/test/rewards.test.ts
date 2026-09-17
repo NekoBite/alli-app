@@ -28,21 +28,31 @@ after(async () => pool.end());
 describe('run rewards', () => {
   beforeEach(setupDb);
 
-  const run = (over: Partial<Parameters<typeof submitRun>[1]> = {}) => ({
-    clientRunId: randomUUID(),
-    startedAt: 1_700_000_000_000,
-    track: goodTrack(100),
-    day: DAY,
-    ...over,
-  });
+  /**
+   * A believable upload: the standard track, with a pedometer total every five
+   * fixes that works out to a ~1.4 m stride — inside both the window cap and
+   * the stride check, so nothing is flagged and the steps all count.
+   */
+  const run = (over: Partial<Parameters<typeof submitRun>[1]> = {}) => {
+    const track = over.track ?? goodTrack(100);
+    return {
+      clientRunId: randomUUID(),
+      startedAt: 1_700_000_000_000,
+      track,
+      stepSamples: stepSamples(track, 50),
+      day: DAY,
+      ...over,
+    };
+  };
 
-  it('awards points from the server-recomputed distance', async () => {
+  it('awards points from the steps it re-credited itself', async () => {
     const userId = await createUser();
     const result = await submitRun(userId, run());
 
-    // 99 hops of ~13.9 m ≈ 1.37 km at 100 points/km.
-    assert.equal(result.reward.flags.length, 0);
-    assert.ok(result.reward.points > 100 && result.reward.points < 160);
+    // 20 windows of 50 steps = 1,000 steps, at 100 points per 1,000.
+    assert.deepEqual(result.reward.flags, []);
+    assert.equal(result.reward.steps, 1000);
+    assert.equal(result.reward.points, 100);
 
     const profile = await getProfile(userId, DAY);
     assert.equal(profile.pointsBalance, result.reward.points);
@@ -98,7 +108,8 @@ describe('run rewards', () => {
   it('holds the daily cap against concurrent submissions', async () => {
     const userId = await createUser();
 
-    // Ten long runs at once. Without the row lock in submitRun each would read
+    // Ten long runs at once — 9,000 credited steps each, so any two of them
+    // clear the daily cap. Without the row lock in submitRun each would read
     // "0 earned today" and award a full run's worth, blowing past the cap.
     const results = await Promise.all(
       Array.from({ length: 10 }, () => submitRun(userId, run({ track: goodTrack(900) }))),
@@ -138,6 +149,7 @@ describe('run rewards', () => {
     assert.equal(result.reward.steps, 0);
     assert.equal(result.reward.stars, 0);
     assert.equal(result.reward.points, 0);
+    assert.equal(result.reward.eligibleSteps, 0);
   });
 
   it('caps a fabricated step count at what the distance could hold', async () => {
@@ -156,13 +168,24 @@ describe('run rewards', () => {
     assert.ok(inflated.reward.steps > honest.reward.steps, 'without punishing an honest count');
   });
 
-  it('pays no star when the device sent no step samples at all', async () => {
+  it('pays nothing when the device sent no step samples at all', async () => {
     const userId = await createUser();
-    const result = await submitRun(userId, run());
+    // Built without the helper: the point of this case is the absent field,
+    // the way a device with no pedometer uploads.
+    const result = await submitRun(userId, {
+      clientRunId: randomUUID(),
+      startedAt: 1_700_000_000_000,
+      track: goodTrack(100),
+      day: DAY,
+    });
 
+    // The track is a valid 1.37 km. Steps are the reward basis, so a run that
+    // reports none earns none — distance alone is not payable.
+    assert.deepEqual(result.reward.flags, []);
+    assert.ok(result.reward.eligibleMetres > 1000);
     assert.equal(result.reward.steps, 0);
+    assert.equal(result.reward.points, 0);
     assert.equal(result.reward.stars, 0);
-    assert.ok(result.reward.points > 0, 'the distance still earns');
   });
 
   it('counts a streak only over consecutive days', async () => {

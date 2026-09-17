@@ -14,8 +14,9 @@ import {
   Text,
 } from '@/components';
 import { useGardenStore } from '@/features/garden/store';
-import { useRunStore } from '@/features/run/store';
+import { weekGoals } from '@/features/run/goals';
 import { pointsToAlli, REWARD_RULES } from '@/features/run/rewards';
+import { useRunStore } from '@/features/run/store';
 import { useWalletStore } from '@/features/wallet/store';
 import { colors, spacing } from '@/theme';
 import { formatFiat, formatPoints, formatToken } from '@/utils/format';
@@ -44,6 +45,8 @@ export default function HomeScreen() {
   const alli = wallet.balanceOf('ALLI');
   const capProgress = run.pointsEarnedToday / REWARD_RULES.dailyPointsCap;
   const canRun = run.canStart();
+  // The last bucket is today — steps are what the points came from.
+  const today = weekGoals(run.history).at(-1);
 
   return (
     <Screen
@@ -87,8 +90,9 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.stats}>
+          <StatTile label="Steps" value={formatPoints(today?.steps ?? 0)} />
           <StatTile
-            label="Stars today"
+            label="Stars"
             value={run.entitlement.starsToday.toString()}
             color={colors.gold}
           />

@@ -144,8 +144,8 @@ export default function ActiveRunScreen() {
         </Text>
         {session.pedometer === 'unavailable' ? (
           <Text variant="caption" color={colors.warning}>
-            No step counter on this device, so this run cannot complete. The distance still earns
-            points.
+            No step counter on this device. Steps are what earn — without one this run records
+            distance but cannot pay points or a star.
           </Text>
         ) : null}
       </Card>

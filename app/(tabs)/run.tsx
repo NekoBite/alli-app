@@ -77,7 +77,7 @@ export default function RunScreen() {
                   value={entitlement.starsToday.toString()}
                   color={colors.gold}
                 />
-                <StatTile label="Runs this month" value={entitlement.runsThisMonth.toString()} />
+                <StatTile label="This month" value={entitlement.runsThisMonth.toString()} />
                 <StatTile
                   label="Runs left"
                   value={entitlement.runsLeft.toString()}
@@ -154,6 +154,9 @@ export default function RunScreen() {
               </View>
               <View style={styles.stats}>
                 <StatTile label="Distance" value={formatDistance(totals.metres)} unit="km" />
+                <StatTile label="Steps" value={formatPoints(totals.steps)} />
+              </View>
+              <View style={styles.stats}>
                 <StatTile
                   label="Move minutes"
                   value={Math.round(totals.movingSeconds / 60).toString()}
@@ -162,7 +165,10 @@ export default function RunScreen() {
               </View>
             </Card>
 
-            <SectionHeader title="Points" subtitle={`${REWARD_RULES.pointsPerKm} per validated km`} />
+            <SectionHeader
+              title="Points"
+              subtitle={`${REWARD_RULES.pointsPerThousandSteps} per 1,000 GPS-backed steps`}
+            />
             <Card style={styles.card}>
               <Text variant="title" color={colors.green}>
                 {formatPoints(pointsBalance)}

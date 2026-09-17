@@ -57,8 +57,10 @@ export type RewardFlag =
   | 'step-mismatch';
 
 export type RewardBreakdown = {
-  /** Distance that passed validation, in metres. */
+  /** Distance that passed validation, in metres. Measured and shown, never paid. */
   eligibleMetres: number;
+  /** Credited steps that passed validation — the basis of `basePoints`. */
+  eligibleSteps: number;
   basePoints: number;
   /** Multiplier from streaks, events, or a planted-tree bonus. */
   multiplier: number;
