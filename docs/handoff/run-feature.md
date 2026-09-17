@@ -123,14 +123,20 @@ float's balance rather than at total supply.
 gives a cheat a dial to tune against.
 
 **The reward constants are placeholders, not a balanced economy.** 100 points
-per validated km, 1,000 points = 1 ALLI, 1,000/day cap; one star per completed
+per 1,000 credited steps, 1,000 points = 1 ALLI, 1,000/day cap; one star per completed
 run at 1,000 ALLI each, 25 USDT for 30 run credits. They belong server-side
 before launch so they can be tuned without an app release. See
 `docs/architecture.md` §4 for the emission problem that is still unsolved — and
 note the star and the point scales have not been reconciled with each other.
 
+**Steps pay; distance is the evidence.** The kilometre figure is measured,
+shown and used to validate — pace, stride, the 300 m minimum — but points come
+from the GPS-backed step count, so a spoofed track with no steps behind it earns
+nothing, and a device with no pedometer earns nothing either. The run screen
+says so while the run is live rather than after it.
+
 **A run pays in two currencies, bounded differently.** Points accrue per
-validated kilometre under a daily cap. A star is paid once per *completed* run —
+1,000 credited steps under a daily cap. A star is paid once per *completed* run —
 200 GPS-backed steps, no validation flags — and is bounded by run credits, which
 cost money. Hitting the daily point cap does not cost the star; that is
 deliberate, and there is a test for it.

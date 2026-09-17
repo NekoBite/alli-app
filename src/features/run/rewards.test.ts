@@ -11,46 +11,72 @@ function track(points: number): GeoPoint[] {
   }));
 }
 
+/**
+ * A plausible outing: 2.5 m/s over a 0.8 m stride, which is what the pace and
+ * stride checks are looking for. Steps are the reward basis, so they are what
+ * each case varies.
+ */
+function run(steps: number, over = { metresPerStep: 0.8, speedMps: 2.5 }) {
+  const distanceMetres = steps * over.metresPerStep;
+  return {
+    distanceMetres,
+    movingSeconds: distanceMetres / over.speedMps,
+    track: track(Math.max(2, Math.round(steps / 50))),
+    steps,
+  };
+}
+
 const clean = { pointsEarnedToday: 0 };
 
 describe('calculateReward', () => {
-  it('awards pointsPerKm for a clean run', () => {
-    const reward = calculateReward(
-      { distanceMetres: 5000, movingSeconds: 1500, track: track(100) },
-      clean,
-    );
+  it('pays pointsPerThousandSteps for a clean run', () => {
+    const reward = calculateReward(run(5000), clean);
 
     expect(reward.flags).toEqual([]);
+    expect(reward.eligibleSteps).toBe(5000);
     expect(reward.points).toBe(500);
     expect(pointsToAlli(reward.points)).toBe(0.5);
   });
 
-  it('rejects a run faster than a human can move', () => {
-    // 5 km in 5 minutes = 16.7 m/s.
+  it('pays for the steps, not the ground covered', () => {
+    // Same 4 km, twice the steps: twice the points. Distance is the witness,
+    // not the reward.
+    const short = calculateReward(run(5000, { metresPerStep: 0.8, speedMps: 2.5 }), clean);
+    const longer = calculateReward(run(10_000, { metresPerStep: 0.4, speedMps: 2.5 }), clean);
+
+    expect(longer.eligibleMetres).toBe(short.eligibleMetres);
+    expect(longer.points).toBe(short.points * 2);
+  });
+
+  it('pays nothing for distance with no steps behind it', () => {
+    // A device with no pedometer, or GPS moving with nobody walking.
     const reward = calculateReward(
-      { distanceMetres: 5000, movingSeconds: 300, track: track(100) },
+      { distanceMetres: 5000, movingSeconds: 2000, track: track(100) },
       clean,
     );
+
+    expect(reward.flags).toEqual([]);
+    expect(reward.eligibleMetres).toBe(5000);
+    expect(reward.eligibleSteps).toBe(0);
+    expect(reward.points).toBe(0);
+  });
+
+  it('rejects a run faster than a human can move', () => {
+    const reward = calculateReward(run(5000, { metresPerStep: 0.8, speedMps: 16 }), clean);
 
     expect(reward.flags).toContain('pace-too-fast');
     expect(reward.points).toBe(0);
   });
 
   it('rejects a run below the minimum distance', () => {
-    const reward = calculateReward(
-      { distanceMetres: 120, movingSeconds: 90, track: track(10) },
-      clean,
-    );
+    const reward = calculateReward(run(200, { metresPerStep: 0.6, speedMps: 1.5 }), clean);
 
     expect(reward.flags).toContain('too-short');
     expect(reward.points).toBe(0);
   });
 
   it('flags a track where most fixes were discarded', () => {
-    const reward = calculateReward(
-      { distanceMetres: 4000, movingSeconds: 1200, track: track(10), steps: 3000 },
-      { ...clean, rejectedPoints: 40 },
-    );
+    const reward = calculateReward(run(4000), { ...clean, rejectedPoints: 400 });
 
     expect(reward.flags).toContain('poor-gps');
     expect(reward.points).toBe(0);
@@ -58,20 +84,16 @@ describe('calculateReward', () => {
 
   it('flags an impossible stride length', () => {
     // 5 km on 500 steps = 10 m per step.
-    const reward = calculateReward(
-      { distanceMetres: 5000, movingSeconds: 1500, track: track(100), steps: 500 },
-      clean,
-    );
+    const reward = calculateReward(run(500, { metresPerStep: 10, speedMps: 3 }), clean);
 
     expect(reward.flags).toContain('step-mismatch');
     expect(reward.points).toBe(0);
   });
 
   it('clamps to the daily cap and says so', () => {
-    const reward = calculateReward(
-      { distanceMetres: 10_000, movingSeconds: 3000, track: track(200) },
-      { pointsEarnedToday: REWARD_RULES.dailyPointsCap - 100 },
-    );
+    const reward = calculateReward(run(10_000), {
+      pointsEarnedToday: REWARD_RULES.dailyPointsCap - 100,
+    });
 
     expect(reward.grossPoints).toBe(1000);
     expect(reward.points).toBe(100);
@@ -79,10 +101,7 @@ describe('calculateReward', () => {
   });
 
   it('applies the server-supplied multiplier', () => {
-    const reward = calculateReward(
-      { distanceMetres: 3000, movingSeconds: 900, track: track(60) },
-      { pointsEarnedToday: 0, multiplier: 1.5 },
-    );
+    const reward = calculateReward(run(3000), { pointsEarnedToday: 0, multiplier: 1.5 });
 
     expect(reward.points).toBe(450);
   });
@@ -109,12 +128,12 @@ describe('stars', () => {
     expect(starsToAlli(reward.stars)).toBe(REWARD_RULES.alliPerStar);
   });
 
-  it('pays no star below the step goal, but still pays the distance', () => {
+  it('pays no star below the step goal, but still pays those steps', () => {
     const reward = calculateReward({ ...complete, steps: REWARD_RULES.stepGoal - 1 }, clean);
 
     expect(reward.goalReached).toBe(false);
     expect(reward.stars).toBe(0);
-    expect(reward.points).toBe(40);
+    expect(reward.points).toBe(19);
   });
 
   it('pays no star when the run was flagged', () => {

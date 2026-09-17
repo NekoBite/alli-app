@@ -29,6 +29,11 @@ sensor data they can fake. Everything that decides how much ALLI exists must liv
 | Payment confirmation | — | ✅ watches the chain |
 | Card actions | requests | ✅ proxies to the issuer |
 
+Note which way round the two sensors work: **steps are the reward basis and distance is the
+evidence.** GPS is the harder of the two to fake convincingly over a whole route, so it vouches for
+the pedometer rather than paying out itself — which also means a spoofed track with no steps behind
+it earns nothing.
+
 `src/features/run/rewards.ts` and `src/features/run/steps.ts` are written as pure functions
 precisely so the backend can run the identical code on the raw track. Keep the two in sync — a
 divergence shows up as users being told they earned one number and credited another.
@@ -88,6 +93,7 @@ server-side on the raw inputs):
 | Minimum distance | 300 m | micro-run farming |
 | Step window | no GPS movement, no steps | a phone shaken in a chair |
 | Step ceiling | ≤ 1 step per 0.3 m covered | an inflated pedometer total |
+| No steps, no points | distance alone pays nothing | GPS spoofed with nobody walking |
 | Daily cap | 1,000 points | account farming rate |
 | Run credits | one per recorded run | star emission rate |
 
@@ -109,8 +115,9 @@ device and a mock-location provider. The layers that actually matter:
 Placeholder numbers from `REWARD_RULES` and `SEEDS`:
 
 **Emission**
-- 100 points per validated km → 1,000 points = 1 ALLI → **1 ALLI per 10 km**
-- Daily cap 1,000 points = **1 ALLI/day/account** from running
+- 100 points per 1,000 GPS-backed steps → 1,000 points = 1 ALLI → **1 ALLI per 10,000 steps**
+- Daily cap 1,000 points = **1 ALLI/day/account** from running, or about 10,000 steps
+- Distance is measured and shown but never paid: it is the witness for the steps, not the reward
 - 1 star per completed run → 1 star = 1,000 ALLI, bounded by run credits rather than by a cap
 - Garden harvests: 12–1,050 ALLI per harvest depending on tier
 - Garden run bonus: up to +50% (capped in `growth.ts`)

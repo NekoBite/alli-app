@@ -110,10 +110,12 @@ Before launch they belong on the server so they can be tuned without an app rele
 [docs/architecture.md](docs/architecture.md) for the emission model and the sinks that have to
 absorb it.
 
-A run pays in two currencies, bounded differently:
+**Steps are what pay.** Distance is measured, shown in kilometres and used to validate — it is how
+the app knows the steps were real, and what the pace and stride checks run on — but the number that
+turns into points is the GPS-backed step count. A run pays in two currencies, bounded differently:
 
-- **Points**, per validated kilometre, bounded by a daily cap. 100 points/km, 1,000 points = 1 ALLI,
-  1,000 points/day.
+- **Points**, per 1,000 credited steps, bounded by a daily cap. 100 points per 1,000 steps,
+  1,000 points = 1 ALLI, 1,000 points/day — so the cap lands at about 10,000 steps a day.
 - **Stars**, one per *completed* run — 200 GPS-backed steps with no validation flags — bounded by
   run credits rather than by a cap. 1 star = 1,000 ALLI.
 

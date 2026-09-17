@@ -15,6 +15,7 @@ function run(daysAgo: number, steps: number, overrides: Partial<RunSummary> = {}
     confirmed: true,
     reward: {
       eligibleMetres: 2000,
+      eligibleSteps: steps,
       basePoints: 200,
       multiplier: 1,
       grossPoints: 200,
