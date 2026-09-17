@@ -183,11 +183,23 @@ refuse a run.
 Shoe tiers are stored (`users.shoe_tier`, issued Leather at registration) and the server applies
 the multiplier, but **upgrading is not built**: nothing mints or sells a Silver or Gold NFT.
 
-### 4. Background location
+### 4. Background recording — built, **unverified on a device**
 
-`useRunSession` subscribes in the foreground only. iOS suspends the app when the screen locks and
-the track ends mid-run. Shipping needs `expo-task-manager` with a foreground service on Android
-and a background-location task on iOS — both already declared in `app.json`.
+A run now keeps recording with the screen off. `src/features/run/background.ts` registers an
+`expo-task-manager` location task (a foreground service on Android, a background-location task on
+iOS), which buffers fixes to storage because the OS can wake it into a process with no React tree.
+Coming back to the app drains that buffer, and on iOS also asks `Pedometer.getStepCountAsync` for
+the steps the OS counted while the live subscription was dead — then re-credits the whole run with
+`creditStepSamples`, the same function the server runs.
+
+**This has not been run on a phone.** The merge and backfill maths are unit-tested and both
+platforms bundle, but the parts that only a device exercises — whether iOS wakes the task on a
+locked screen, whether Android's foreground service survives Doze, whether the backfill
+double-counts against a subscription that resumed — need a real walk with a real pocket. Until
+someone does that, treat the background path as plausible rather than proven.
+
+Background permission is requested at the start of a run and refusal is not fatal: the run records
+while the screen is on, and the screen says so.
 
 ### 5. Card issuing
 

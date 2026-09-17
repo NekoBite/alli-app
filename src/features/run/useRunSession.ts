@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { Pedometer } from 'expo-sensors';
 
 import { useMockSensors } from '@/config/env';
+import {
+  clearBackgroundFixes,
+  drainBackgroundFixes,
+  startBackgroundLocation,
+  stopBackgroundLocation,
+  type BackgroundStatus,
+} from './background';
 import { DRAFT_SAVE_INTERVAL_MS, runDraft, type RunDraft } from './draft';
 import { averageSpeed, summarizeTrack } from './geo';
-import { creditStepWindow } from './steps';
+import { appendBackfill, backfillWindow, mergeFixes } from './reconcile';
+import { creditStepSamples, creditStepWindow } from './steps';
 import type { GeoPoint, RunStatus, StepSample } from './types';
 
 /** How often the OS should hand us a fix while a run is active. */
@@ -52,6 +61,11 @@ export type RunSessionState = {
   metresAtLastStep: number;
   permission: 'unknown' | 'granted' | 'denied';
   pedometer: PedometerState;
+  /**
+   * Whether the run keeps recording once the app is off screen. `denied` means
+   * the run works, but only while the screen is on — which the screen says.
+   */
+  background: BackgroundStatus | 'off';
   /** True when this run was picked up from a saved draft rather than started fresh. */
   resumedFromDraft: boolean;
   error?: string;
@@ -74,6 +88,7 @@ const INITIAL: RunSessionState = {
   metresAtLastStep: 0,
   permission: 'unknown',
   pedometer: 'unknown',
+  background: 'off',
   resumedFromDraft: false,
 };
 
@@ -193,6 +208,19 @@ export function useRunSession() {
     });
   }, []);
 
+  /**
+   * (Re)subscribes to the pedometer, counting from zero.
+   *
+   * Restarting it is how a backfill stays honest: iOS hands back the steps it
+   * counted while the app was suspended, and a live subscription that had been
+   * accumulating across that same span would count them a second time.
+   */
+  const watchSteps = useCallback(() => {
+    stepSubscription.current?.remove();
+    consumedSteps.current = 0;
+    stepSubscription.current = Pedometer.watchStepCount((result) => addSteps(result.steps));
+  }, [addSteps]);
+
   const stopSources = useCallback(() => {
     subscription.current?.remove();
     subscription.current = null;
@@ -234,6 +262,74 @@ export function useRunSession() {
     lastSavedAt.current = now;
     void runDraft.save(toDraft(state));
   }, [state]);
+
+  /**
+   * Pulls in everything that happened while the app was not on screen: the
+   * fixes the task buffered, and — on iOS, where the live subscription dies
+   * with the app — the steps the OS counted in the meantime.
+   *
+   * The whole run is then re-credited from scratch with `creditStepSamples`,
+   * the same function the server runs. Patching the incremental count instead
+   * would drift across a gap, and the server's number is the one that pays.
+   */
+  const syncFromBackground = useCallback(async () => {
+    if (useMockSensors) return;
+
+    const fixes = await drainBackgroundFixes().catch(() => [] as GeoPoint[]);
+
+    let backfilled: { from: number; to: number; steps: number } | null = null;
+    if (Platform.OS === 'ios') {
+      const window = backfillWindow(
+        latest.current.stepSamples,
+        latest.current.startedAt,
+        Date.now(),
+      );
+      if (window) {
+        const counted = await Pedometer.getStepCountAsync(
+          new Date(window.from),
+          new Date(window.to),
+        ).catch(() => null);
+        if (counted && counted.steps > 0) backfilled = { ...window, steps: counted.steps };
+      }
+    }
+
+    if (fixes.length === 0 && !backfilled) return;
+
+    setState((prev) => {
+      if (prev.status !== 'running') return prev;
+      const track = mergeFixes(prev.track, fixes);
+      const stepSamples = backfilled
+        ? appendBackfill(prev.stepSamples, backfilled)
+        : prev.stepSamples;
+      const stats = summarizeTrack(track);
+      const credit = creditStepSamples(track, stepSamples);
+      return {
+        ...prev,
+        track,
+        stepSamples,
+        distanceMetres: stats.distanceMetres,
+        movingSeconds: stats.movingSeconds,
+        rejectedPoints: stats.rejectedPoints,
+        speedMps: averageSpeed(stats.distanceMetres, stats.movingSeconds),
+        steps: credit.steps,
+        droppedSteps: credit.dropped,
+        rawSteps: stepSamples[stepSamples.length - 1]?.steps ?? prev.rawSteps,
+        metresAtLastStep: stats.distanceMetres,
+      };
+    });
+
+    // The subscription that was counting across the backfilled span has to
+    // start again from zero, or those steps arrive twice.
+    if (backfilled) watchSteps();
+  }, [watchSteps]);
+
+  // Coming back to the app is the moment to collect what it missed.
+  useEffect(() => {
+    const listener = AppState.addEventListener('change', (next) => {
+      if (next === 'active' && latest.current.status === 'running') void syncFromBackground();
+    });
+    return () => listener.remove();
+  }, [syncFromBackground]);
 
   const startSources = useCallback(async () => {
     // A new pedometer subscription counts from zero again.
@@ -298,8 +394,8 @@ export function useRunSession() {
     }
 
     setState((prev) => ({ ...prev, pedometer: 'available' }));
-    stepSubscription.current = Pedometer.watchStepCount((result) => addSteps(result.steps));
-  }, [addPoint, addSteps]);
+    watchSteps();
+  }, [addPoint, addSteps, watchSteps]);
 
   const start = useCallback(async () => {
     if (!useMockSensors) {
@@ -324,12 +420,20 @@ export function useRunSession() {
       permission: 'granted',
     });
     await startSources();
+
+    if (!useMockSensors) {
+      const background = await startBackgroundLocation().catch(
+        () => 'denied' as BackgroundStatus,
+      );
+      setState((prev) => (prev.status === 'running' ? { ...prev, background } : prev));
+    }
     return true;
   }, [startSources]);
 
   const pause = useCallback(() => {
     if (latest.current.status !== 'running') return;
     stopSources();
+    void stopBackgroundLocation();
     setState((prev) => (prev.status === 'running' ? { ...prev, status: 'paused' } : prev));
 
     // Saved immediately rather than on the throttle: a pause is exactly when
@@ -344,17 +448,46 @@ export function useRunSession() {
       prev.status === 'paused' ? { ...prev, status: 'running', error: undefined } : prev,
     );
     await startSources();
-  }, [startSources]);
 
-  const finish = useCallback(() => {
+    if (!useMockSensors) {
+      const background = await startBackgroundLocation().catch(
+        () => 'denied' as BackgroundStatus,
+      );
+      setState((prev) => (prev.status === 'running' ? { ...prev, background } : prev));
+      // A run paused from the tab bar rather than the button may have kept
+      // recording; take whatever the task buffered before carrying on.
+      await syncFromBackground();
+    }
+  }, [startSources, syncFromBackground]);
+
+  /**
+   * Ends the run and returns the state it ended in.
+   *
+   * The snapshot is returned rather than read off the hook because the last
+   * thing finishing does is collect the background buffer, and a screen
+   * reading `session.track` from its own render would miss exactly the fixes
+   * that were just recovered.
+   */
+  const finish = useCallback(async (): Promise<RunSessionState> => {
+    await syncFromBackground();
     stopSources();
+    void stopBackgroundLocation();
     void runDraft.clear();
-    setState((prev) => ({ ...prev, status: 'finished' }));
-  }, [stopSources]);
+
+    return new Promise<RunSessionState>((resolve) => {
+      setState((prev) => {
+        const finished: RunSessionState = { ...prev, status: 'finished' };
+        resolve(finished);
+        return finished;
+      });
+    });
+  }, [stopSources, syncFromBackground]);
 
   const reset = useCallback(() => {
     stopSources();
+    void stopBackgroundLocation();
     void runDraft.clear();
+    void clearBackgroundFixes();
     setState(INITIAL);
   }, [stopSources]);
 

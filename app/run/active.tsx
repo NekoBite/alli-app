@@ -35,22 +35,24 @@ export default function ActiveRunScreen() {
   const progress = questProgress(preview.stepsToday);
 
   const finish = useCallback(async () => {
-    session.finish();
     setSubmitting(true);
+    // Finishing collects whatever the background task buffered, so the run is
+    // built from the snapshot it hands back rather than from this render.
+    const final = await session.finish();
 
     const record: RunSession = {
-      id: session.id || `run-${Date.now()}`,
-      startedAt: session.startedAt || Date.now() - session.elapsedSeconds * 1000,
+      id: final.id || `run-${Date.now()}`,
+      startedAt: final.startedAt || Date.now() - final.elapsedSeconds * 1000,
       endedAt: Date.now(),
-      track: session.track,
-      distanceMetres: session.distanceMetres,
-      movingSeconds: session.movingSeconds,
-      steps: session.steps,
-      stepSamples: session.stepSamples,
+      track: final.track,
+      distanceMetres: final.distanceMetres,
+      movingSeconds: final.movingSeconds,
+      steps: final.steps,
+      stepSamples: final.stepSamples,
     };
 
     try {
-      const summary = await submitRun(record, session.rejectedPoints);
+      const summary = await submitRun(record, final.rejectedPoints);
       router.replace({ pathname: '/run/summary', params: { id: summary.id } });
     } catch (error) {
       setSubmitting(false);
@@ -76,10 +78,22 @@ export default function ActiveRunScreen() {
     <Screen>
       <Card style={styles.card} tone="muted">
         <Text variant="caption" color={colors.warning}>
-          Keep the screen on and run outdoors — steps only count where GPS movement backs them up,
-          so shaking the phone does nothing. Your progress is saved automatically, so you can stop
-          and pick the run up later.
+          Run outdoors — steps only count where GPS movement backs them up, so shaking the phone
+          does nothing. Your progress is saved automatically, so you can stop and pick the run up
+          later.
         </Text>
+        {session.status === 'running' ? (
+          <Text
+            variant="caption"
+            color={session.background === 'started' ? colors.green : colors.warning}
+          >
+            {session.background === 'started'
+              ? 'Recording carries on with the screen off — pocket the phone and keep walking.'
+              : session.background === 'denied'
+                ? 'Background location is off, so this run stops when the screen locks. Allow it in Settings to record with the phone away.'
+                : 'Keep the screen on — this build cannot record in the background.'}
+          </Text>
+        ) : null}
       </Card>
 
       {session.resumedFromDraft && session.status === 'paused' ? (

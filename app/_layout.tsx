@@ -1,5 +1,8 @@
 // Must come first: ethers needs crypto.getRandomValues, which Hermes lacks.
 import '@/polyfills';
+// Registers the background location task. The OS can wake it into a process
+// that has no React tree, so it has to be defined at import time, here.
+import '@/features/run/background';
 
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';

@@ -28,6 +28,8 @@ export const KEYS = {
   runHistory: 'alli.run.history',
   /** The in-progress run, so closing the app mid-run does not lose it. */
   runDraft: 'alli.run.draft',
+  /** Fixes the background location task collected while the app was away. */
+  runBackgroundFixes: 'alli.run.bgfixes',
   garden: 'alli.garden.plots',
   cart: 'alli.market.cart',
   walletAddress: 'alli.wallet.address',
