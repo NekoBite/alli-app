@@ -8,7 +8,7 @@ import { useRunStore } from '@/features/run/store';
 import { useWalletStore } from '@/features/wallet/store';
 import { chain } from '@/services/chain';
 import { colors, radius, spacing, type } from '@/theme';
-import { formatPoints, formatToken, shortAddress } from '@/utils/format';
+import { formatPoints, formatStars, formatToken, shortAddress } from '@/utils/format';
 
 export default function StarsScreen() {
   const { profile, exchanging, exchangeStars } = useRunStore();
@@ -37,7 +37,7 @@ export default function StarsScreen() {
           Stars
         </Text>
         <Text variant="hero" color={colors.gold}>
-          {profile.starsBalance}
+          {formatStars(profile.starsBalance)}
         </Text>
         <Text variant="caption" color={colors.ink2}>
           ≈ {formatToken(starsToAlli(profile.starsBalance), 'ALLI')} · 1 star ={' '}
@@ -64,11 +64,11 @@ export default function StarsScreen() {
         />
         <Row
           label="Available"
-          value={profile.starsBalance.toString()}
+          value={formatStars(profile.starsBalance)}
           right={
             <Pressable
               accessibilityRole="button"
-              onPress={() => setAmount(String(profile.starsBalance))}
+              onPress={() => setAmount(String(Math.floor(profile.starsBalance)))}
               hitSlop={8}
             >
               <Text variant="bodyStrong" color={colors.green}>

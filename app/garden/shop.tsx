@@ -8,7 +8,7 @@ import { useGardenStore } from '@/features/garden/store';
 import type { Seed } from '@/features/garden/types';
 import { useWalletStore } from '@/features/wallet/store';
 import { colors, spacing } from '@/theme';
-import { formatToken } from '@/utils/format';
+import { formatStars, formatToken } from '@/utils/format';
 
 export default function SeedShopScreen() {
   const router = useRouter();
@@ -41,7 +41,7 @@ export default function SeedShopScreen() {
     <Screen>
       <SectionHeader
         title="Standard seeds"
-        subtitle="Bought with ALLI you earned from running"
+        subtitle="Bought with ALLI · the low-carbon farm: weather, compost, practices"
       />
       {STANDARD_SEEDS.map((seed) => (
         <SeedCard key={seed.id} seed={seed} busy={buying === seed.id} onBuy={() => void buy(seed)} />
@@ -51,15 +51,16 @@ export default function SeedShopScreen() {
 
       <SectionHeader
         title="Premium seeds"
-        subtitle="Bought with USDT on BNB Chain · higher yield, bigger run bonus"
+        subtitle="Bought with USDT on BNB Chain · simple care, bigger reward and run bonus"
       />
       {PREMIUM_SEEDS.map((seed) => (
         <SeedCard key={seed.id} seed={seed} busy={buying === seed.id} onBuy={() => void buy(seed)} />
       ))}
 
       <Text variant="caption" color={colors.ink3} style={styles.note}>
-        Yields are paid in ALLI regardless of what a seed costs. Premium seeds are funded in USDT,
-        so their emission comes from the treasury rather than from other players.
+        Every tree pays in stars, the same stars the daily run quest pays, and every tree lives
+        thirty days. Premium seeds are funded in USDT, so their stars come from the treasury rather
+        than from other players.
       </Text>
     </Screen>
   );
@@ -84,21 +85,25 @@ function SeedCard({ seed, busy, onBuy }: { seed: Seed; busy: boolean; onBuy: () 
         {seed.blurb}
       </Text>
 
-      <Row label="Grows in" value={`${seed.growthHours}h`} />
       <Row
-        label="Yield per harvest"
-        value={formatToken(seed.yieldAlli, 'ALLI')}
-        valueColor={colors.green}
+        label="Care"
+        value={seed.careProfile === 'lowCarbon' ? 'Low-carbon farm' : 'Simple'}
+        valueColor={seed.careProfile === 'lowCarbon' ? colors.teal : colors.ink}
       />
-      <Row label="Harvests" value={String(seed.harvestsTotal)} />
       <Row
-        label="Run bonus"
+        label="Pays per thriving night"
+        value={`${formatStars(seed.starsPerDay)} ★`}
+        valueColor={colors.gold}
+      />
+      <Row label="Lives" value={`${seed.lifetimeDays} days`} />
+      <Row
+        label="Run bonus while thriving"
         value={`+${(seed.runBonus * 100).toFixed(0)}%`}
         valueColor={colors.cyan}
       />
       <Row
-        label="Total yield"
-        value={formatToken(seed.yieldAlli * seed.harvestsTotal, 'ALLI')}
+        label="Up to"
+        value={`${formatStars(seed.starsPerDay * seed.lifetimeDays)} ★ before streak and carbon bonuses`}
         emphasis
       />
 

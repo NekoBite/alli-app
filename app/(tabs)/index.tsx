@@ -19,8 +19,7 @@ import { shoeFor } from '@/features/run/shoes';
 import { useRunStore } from '@/features/run/store';
 import { useWalletStore } from '@/features/wallet/store';
 import { colors, spacing } from '@/theme';
-import { formatFiat, formatPoints, formatToken } from '@/utils/format';
-import { countdown } from '@/utils/time';
+import { formatFiat, formatPoints, formatToken, formatStars } from '@/utils/format';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -37,10 +36,11 @@ export default function HomeScreen() {
   }, []);
 
   const views = garden.views();
-  const readyToHarvest = views.filter((view) => view.harvestable);
-  const nextUp = views
-    .filter((view) => !view.harvestable && view.stage !== 'spent')
-    .sort((a, b) => a.msUntilHarvest - b.msUntilHarvest)[0];
+  const thriving = views.filter((view) => view.health === 'thriving');
+  const needingCare = views.filter(
+    (view) => view.health === 'stressed' || view.health === 'wilting',
+  );
+  const sparklesWaiting = views.reduce((sum, view) => sum + view.claimableStars, 0);
 
   const alli = wallet.balanceOf('ALLI');
   const canRun = run.canStart();
@@ -62,7 +62,7 @@ export default function HomeScreen() {
           Stars held
         </Text>
         <Text variant="hero" color={colors.gold}>
-          {formatPoints(run.profile.starsBalance)}
+          {formatStars(run.profile.starsBalance)}
         </Text>
         <Text variant="caption" color={colors.ink2}>
           ≈ {formatToken(starsToAlli(run.profile.starsBalance), 'ALLI')} · 1 star ={' '}
@@ -88,7 +88,7 @@ export default function HomeScreen() {
           />
           <StatTile
             label="Stars today"
-            value={run.profile.starsEarnedToday.toString()}
+            value={formatStars(run.profile.starsEarnedToday)}
             color={colors.gold}
           />
           <StatTile
@@ -123,34 +123,33 @@ export default function HomeScreen() {
 
       <SectionHeader
         title="Garden"
-        subtitle={`${views.length} planted · ${readyToHarvest.length} ready`}
+        subtitle={`${views.length} planted · ${thriving.length} thriving`}
         actionLabel="Open"
         onAction={() => router.push('/(tabs)/garden')}
       />
       <Card style={styles.block}>
-        {readyToHarvest.length > 0 ? (
+        {sparklesWaiting > 0 ? (
           <Row
-            label={`${readyToHarvest.length} tree${readyToHarvest.length > 1 ? 's' : ''} ready`}
-            value={formatToken(
-              readyToHarvest.reduce((sum, view) => sum + view.seed.yieldAlli, 0),
-              'ALLI',
-            )}
-            valueColor={colors.green}
+            label="Sparkles waiting on your trees"
+            value={`${formatStars(sparklesWaiting)} ★`}
+            valueColor={colors.gold}
             emphasis
           />
         ) : (
-          <Row label="Nothing ready yet" value="—" />
+          <Row label="No sparkles waiting" value="—" />
         )}
-        {nextUp ? (
-          <Row
-            label={`Next: ${nextUp.seed.name}`}
-            value={countdown(nextUp.msUntilHarvest)}
-            valueColor={colors.ink2}
-          />
-        ) : null}
+        <Row
+          label={
+            needingCare.length > 0
+              ? `${needingCare.length} tree${needingCare.length > 1 ? 's' : ''} below the line`
+              : 'Every tree is above the line'
+          }
+          value={needingCare.length > 0 ? 'Needs care' : '✓'}
+          valueColor={needingCare.length > 0 ? colors.warning : colors.green}
+        />
         <Row
           label="Garden run bonus"
-          value={`${((garden.multiplier() - 1) * 100).toFixed(0)}%`}
+          value={`+${((garden.multiplier() - 1) * 100).toFixed(0)}%`}
           valueColor={colors.cyan}
         />
       </Card>

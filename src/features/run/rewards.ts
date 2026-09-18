@@ -29,6 +29,13 @@ export const REWARD_RULES = {
   starsPerQuest: 1,
   /** ALLI one star exchanges for. */
   alliPerStar: 1_000,
+  /**
+   * The ledger's unit. A star is worth 1,000 ALLI, which is too coarse for a
+   * garden that pays a fraction of a star a day, so the ledger counts in
+   * sparkles and a star is a hundred of them. Stars stay the unit everywhere
+   * a person sees a number; sparkles only exist where a whole number is stored.
+   */
+  sparklesPerStar: 100,
 
   /**
    * Runs shorter than this earn nothing and contribute no steps — it stops
@@ -150,6 +157,25 @@ export function calculateReward(
 /** Stars -> ALLI, at the fixed exchange rate. */
 export function starsToAlli(stars: number): number {
   return stars * REWARD_RULES.alliPerStar;
+}
+
+/** Stars -> whole sparkles, the unit the ledger stores. */
+export function toSparkles(stars: number): number {
+  return Math.round(stars * REWARD_RULES.sparklesPerStar);
+}
+
+/** Whole sparkles -> stars, for display and for the exchange rate. */
+export function fromSparkles(sparkles: number): number {
+  return sparkles / REWARD_RULES.sparklesPerStar;
+}
+
+/**
+ * Stars rounded to the ledger's precision. Anything that pays or prices in
+ * stars goes through here so a preview never shows a fraction the ledger
+ * cannot hold.
+ */
+export function roundStars(stars: number): number {
+  return fromSparkles(toSparkles(stars));
 }
 
 /** Progress towards today's quest, clamped to 0–1, for a progress bar. */

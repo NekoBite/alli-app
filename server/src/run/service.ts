@@ -4,9 +4,11 @@ import {
   calculateReward,
   creditStepSamples,
   DEFAULT_SHOE_TIER,
+  fromSparkles,
   REWARD_RULES,
   starsToAlli,
   summarizeTrack,
+  toSparkles,
   type GeoPoint,
   type RewardBreakdown,
   type ShoeTier,
@@ -44,12 +46,18 @@ export type Profile = {
   shoeTier: ShoeTier;
 };
 
+/**
+ * The ledger counts in sparkles (hundredths of a star, migration 003) so the
+ * garden can pay fractions of a star. These two are the only reads of it, and
+ * they convert on the way out; the writes below convert on the way in. Every
+ * number outside this module is in stars.
+ */
 async function starsBalance(db: Db | typeof pool, userId: string): Promise<number> {
   const { rows } = await db.query<{ balance: string | null }>(
     'SELECT sum(delta)::bigint AS balance FROM star_ledger WHERE user_id = $1',
     [userId],
   );
-  return Number(rows[0]?.balance ?? 0);
+  return fromSparkles(Number(rows[0]?.balance ?? 0));
 }
 
 async function starsEarnedOn(db: Db | typeof pool, userId: string, day: string): Promise<number> {
@@ -58,7 +66,7 @@ async function starsEarnedOn(db: Db | typeof pool, userId: string, day: string):
       WHERE user_id = $1 AND day = $2 AND reason = 'run'`,
     [userId, day],
   );
-  return Number(rows[0]?.total ?? 0);
+  return fromSparkles(Number(rows[0]?.total ?? 0));
 }
 
 /**
@@ -244,7 +252,7 @@ export async function submitRun(userId: string, input: SubmitRunInput): Promise<
       `INSERT INTO runs (
          user_id, client_run_id, started_at, ended_at, track,
          distance_metres, moving_seconds, rejected_points, steps,
-         reward, stars_awarded, flags, day
+         reward, sparkles_awarded, flags, day
        ) VALUES ($1,$2,to_timestamp($3/1000.0),
                  CASE WHEN $4::bigint IS NULL THEN NULL ELSE to_timestamp($4/1000.0) END,
                  $5,$6,$7,$8,$9,$10,$11,$12,$13)
@@ -262,7 +270,7 @@ export async function submitRun(userId: string, input: SubmitRunInput): Promise<
         // day's total is summed from, so it must be the number that was judged.
         reward.eligibleSteps,
         JSON.stringify(reward),
-        reward.stars,
+        toSparkles(reward.stars),
         reward.flags,
         input.day,
       ],
@@ -277,7 +285,7 @@ export async function submitRun(userId: string, input: SubmitRunInput): Promise<
          VALUES ($1, $2, 'run', $3, $4, $5)`,
         [
           userId,
-          reward.stars,
+          toSparkles(reward.stars),
           run.id,
           input.day,
           `Daily quest · ${reward.shoeMultiplier}× ${shoeTier}`,
@@ -328,17 +336,18 @@ export async function openExchange({ userId, stars, toAddress, day }: ExchangeRe
     }
 
     const alli = starsToAlli(stars);
+    const sparkles = toSparkles(stars);
     const { rows } = await db.query<{ id: string }>(
-      `INSERT INTO redemptions (user_id, stars, alli_amount, to_address, day)
+      `INSERT INTO redemptions (user_id, sparkles, alli_amount, to_address, day)
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [userId, stars, alli.toString(), toAddress, day],
+      [userId, sparkles, alli.toString(), toAddress, day],
     );
     const redemptionId = rows[0]!.id;
 
     await db.query(
       `INSERT INTO star_ledger (user_id, delta, reason, redemption_id, day, note)
        VALUES ($1, $2, 'redemption', $3, $4, $5)`,
-      [userId, -stars, redemptionId, day, `Exchanged for ${alli} ALLI`],
+      [userId, -sparkles, redemptionId, day, `Exchanged for ${alli} ALLI`],
     );
 
     return { redemptionId, alli };
@@ -356,10 +365,10 @@ export async function settleExchange(redemptionId: string, txHash: string): Prom
 /** Marks the exchange failed and returns the stars, in one transaction. */
 export async function failExchange(redemptionId: string, reason: string): Promise<void> {
   await transaction(async (db) => {
-    const { rows } = await db.query<{ user_id: string; stars: number; day: string }>(
+    const { rows } = await db.query<{ user_id: string; sparkles: number; day: string }>(
       `UPDATE redemptions SET status = 'failed', failure = $2, settled_at = now()
         WHERE id = $1 AND status = 'pending'
-        RETURNING user_id, stars, day::text AS day`,
+        RETURNING user_id, sparkles, day::text AS day`,
       [redemptionId, reason.slice(0, 500)],
     );
     const row = rows[0];
@@ -368,7 +377,7 @@ export async function failExchange(redemptionId: string, reason: string): Promis
     await db.query(
       `INSERT INTO star_ledger (user_id, delta, reason, redemption_id, day, note)
        VALUES ($1, $2, 'adjustment', $3, $4, $5)`,
-      [row.user_id, row.stars, redemptionId, row.day, 'Refund: exchange failed'],
+      [row.user_id, row.sparkles, redemptionId, row.day, 'Refund: exchange failed'],
     );
   });
 }

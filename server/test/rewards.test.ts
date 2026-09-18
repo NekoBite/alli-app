@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { after, beforeEach, describe, it } from 'node:test';
 
 import { pool } from '../src/db/pool.ts';
-import { REWARD_RULES, SHOES } from '../src/shared/run.ts';
+import { REWARD_RULES, SHOES, toSparkles } from '../src/shared/run.ts';
 import {
   failExchange,
   getProfile,
@@ -247,13 +247,21 @@ describe('star exchange', () => {
 
   const address = '0x7A3f9C21b4E8d05F6c1A8b2D3e4F5a6B7c8D9e01';
 
+  /** The ledger holds sparkles, so the fixture converts like the service does. */
   async function giveStars(userId: string, stars: number) {
     await pool.query(
       `INSERT INTO star_ledger (user_id, delta, reason, day, note)
        VALUES ($1, $2, 'adjustment', $3, 'test fixture')`,
-      [userId, stars, DAY],
+      [userId, toSparkles(stars), DAY],
     );
   }
+
+  it('stores a fraction of a star exactly', async () => {
+    const userId = await createUser();
+    await giveStars(userId, 0.35);
+    await giveStars(userId, 0.05);
+    assert.equal((await getProfile(userId, DAY)).starsBalance, 0.4);
+  });
 
   it('debits stars and opens a pending exchange', async () => {
     const userId = await createUser();

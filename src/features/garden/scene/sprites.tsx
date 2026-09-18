@@ -1,8 +1,16 @@
 import { Circle, Group, Line, Oval, Paint, Path, Rect, RoundedRect } from '@shopify/react-native-skia';
 
-import { OUTLINE, PREMIUM_ACCENT, SPENT_TINT, type Season, type SeasonPalette } from './palette';
+import type { Health } from '../types';
+import {
+  DEAD_TINT,
+  OUTLINE,
+  PREMIUM_ACCENT,
+  SPARKLE,
+  SPARKLE_GLOW,
+  type Season,
+  type SeasonPalette,
+} from './palette';
 import { grassPath, starPath, trianglePath, trunkPath } from './shapes';
-import type { PlantVisual } from './visual';
 
 /**
  * The plants, ported shape for shape from the Garden Project sketch. Each
@@ -176,29 +184,29 @@ export function Sapling({ palette }: SpriteProps) {
   );
 }
 
-/** Where fruit hangs on the canopy, in sketch units at g = 1. */
-const FRUIT_SPOTS: readonly (readonly [number, number])[] = [
-  [-40, -150],
-  [22, -125],
-  [48, -185],
-  [-12, -200],
-  [-60, -195],
-];
-
 type TreeProps = SpriteProps & {
-  visual: PlantVisual;
+  health: Health;
+  premium: boolean;
   starPoints: number;
 };
 
-/** `drawTree()`: the full tree, with fruit ripening as the next harvest nears. */
-export function Tree({ palette, season, visual, starPoints }: TreeProps) {
+/**
+ * `drawTree()`: the full tree. Health changes what it wears: a wilting tree
+ * yellows and sheds, a retired one stands bare in its own trunk colour, a dead
+ * one goes grey.
+ */
+export function Tree({ palette, season, health, premium, starPoints }: TreeProps) {
   const g = 1;
-  const leaf = visual.form === 'spent' ? SPENT_TINT : palette.leaf;
-  const trunk = visual.form === 'spent' ? SPENT_TINT : palette.trunk;
-  const bare = visual.form === 'spent';
+  const dead = health === 'dead';
+  const bare = dead || health === 'retired';
+  const leaf = dead ? DEAD_TINT : health === 'wilting' ? palette.leafWilting : palette.leaf;
+  const trunk = dead ? DEAD_TINT : palette.trunk;
 
   return (
     <Group>
+      {health === 'wilting' ? <FallenLeaves color={palette.leafWilting} /> : null}
+      {health === 'retired' ? <FallenLeaves color={palette.fruit} /> : null}
+
       <Path path={trunkPath(0, 0, g)}>
         <Outlined fill={trunk} />
       </Path>
@@ -224,7 +232,7 @@ export function Tree({ palette, season, visual, starPoints }: TreeProps) {
           <Rect x={-25} y={-175} width={50} height={50} color={leaf} />
           <Rect x={-20} y={-195} width={40} height={40} color={leaf} />
           <Path path={starPath(0, -230, 10, 25, starPoints)}>
-            <Outlined fill={visual.premium ? PREMIUM_ACCENT : '#E7CF50'} />
+            <Outlined fill={premium ? PREMIUM_ACCENT : '#E7CF50'} />
           </Path>
         </>
       ) : (
@@ -237,48 +245,53 @@ export function Tree({ palette, season, visual, starPoints }: TreeProps) {
           <Soft cx={-35} cy={-175} r={37.5} fill={leaf} />
           <Soft cx={40} cy={-200} r={30} fill={leaf} />
           <Soft cx={15} cy={-135} r={25} fill={leaf} />
-          {visual.premium ? (
+          {premium ? (
             <Path path={starPath(-14, -258, 8, 17, 5)}>
               <Outlined fill={PREMIUM_ACCENT} />
             </Path>
           ) : null}
         </>
       )}
+    </Group>
+  );
+}
 
-      {!bare ? (
-        <Fruit
-          ripeness={visual.ripeness}
-          harvestable={visual.harvestable}
-          color={visual.premium ? PREMIUM_ACCENT : palette.fruit}
-        />
-      ) : null}
+/** Leaves on the ground around the trunk: what a tree in trouble looks like from across the garden. */
+function FallenLeaves({ color }: { color: string }) {
+  const leaves: readonly (readonly [number, number, number])[] = [
+    [-70, 6, 0.4],
+    [-42, 14, -0.3],
+    [38, 10, 0.6],
+    [66, 4, -0.5],
+    [90, 14, 0.2],
+    [-95, 12, -0.6],
+  ];
+  return (
+    <Group>
+      {leaves.map(([x, y, rot]) => (
+        <Group key={`${x},${y}`} transform={[{ rotate: rot }]} origin={{ x, y }}>
+          <Oval x={x - 9} y={y - 4} width={18} height={8}>
+            <Outlined fill={color} />
+          </Oval>
+        </Group>
+      ))}
     </Group>
   );
 }
 
 /**
- * Fruit grows with the cycle and glows once the harvest is ready — the only
- * thing on the canvas that asks for a tap.
+ * A sparkle: one share of the day's stars, waiting to be tapped. Drawn in
+ * canvas coordinates, outside the plant's transform, so its hit area matches
+ * what `sparkleSpots` reported.
  */
-function Fruit({
-  ripeness,
-  harvestable,
-  color,
-}: {
-  ripeness: number;
-  harvestable: boolean;
-  color: string;
-}) {
-  const r = 4 + 8 * Math.min(1, Math.max(0, ripeness));
-  if (ripeness <= 0.1) return null;
+export function Sparkle({ x, y, r, opacity }: { x: number; y: number; r: number; opacity?: number }) {
   return (
-    <Group>
-      {FRUIT_SPOTS.map(([x, y]) => (
-        <Group key={`${x},${y}`}>
-          {harvestable ? <Circle cx={x} cy={y} r={r + 8} color={color} opacity={0.35} /> : null}
-          <Blob cx={x} cy={y} r={r} fill={color} />
-        </Group>
-      ))}
+    <Group opacity={opacity}>
+      <Circle cx={x} cy={y} r={r * 1.5} color={SPARKLE_GLOW} opacity={0.35} />
+      <Path path={starPath(x, y, r * 0.42, r, 4)}>
+        <Outlined fill={SPARKLE} />
+      </Path>
+      <Circle cx={x} cy={y} r={r * 0.22} color="#FFFFFF" />
     </Group>
   );
 }

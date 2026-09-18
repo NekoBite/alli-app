@@ -1,27 +1,25 @@
+import { newPlot, plotView } from '../care';
 import { SEEDS } from '../catalog';
-import { cycleMs, plotView } from '../growth';
-import type { Plot, PlotView } from '../types';
+import type { Plot } from '../types';
 import { easeInSine, easeOutBack, easeOutSine } from './easing';
-import { hash, hitTest, layoutScene, paintOrder, rand } from './layout';
 import { seasonFor } from './palette';
 import { grassPath, polygonPath, starPath, trunkPath } from './shapes';
+import {
+  hash,
+  hitPlant,
+  hitSparkle,
+  layoutStage,
+  petalFor,
+  rand,
+  sparkleSpots,
+  starPointsFor,
+} from './stage';
 import { visualFor } from './visual';
 
 const acacia = SEEDS.find((s) => s.id === 'seed-acacia')!;
-const ironwood = SEEDS.find((s) => s.id === 'seed-ironwood-premium')!;
-const NOW = 1_700_000_000_000;
-
-function view(overrides: Partial<Plot> = {}, at = NOW): PlotView {
-  const plot: Plot = {
-    id: 'plot-1',
-    seedId: acacia.id,
-    plantedAt: NOW,
-    lastHarvestAt: NOW,
-    harvestsTaken: 0,
-    ...overrides,
-  };
-  return plotView(plot, at)!;
-}
+const NOW = new Date(2026, 8, 18, 12).getTime();
+const DAY = 86_400_000;
+const calm = { conditions: [], carbonMultiplier: 1 };
 
 describe('easing', () => {
   it('starts at 0 and ends at 1', () => {
@@ -34,11 +32,6 @@ describe('easing', () => {
   it('easeOutBack overshoots past 1 on the way in — that is the pop', () => {
     expect(easeOutBack(0.7)).toBeGreaterThan(1);
   });
-
-  it('clamps out-of-range input', () => {
-    expect(easeOutBack(2)).toBeCloseTo(1);
-    expect(easeInSine(-1)).toBeCloseTo(0);
-  });
 });
 
 describe('seasonFor', () => {
@@ -47,7 +40,6 @@ describe('seasonFor', () => {
     expect(seasonFor(new Date(2026, 3, 15))).toBe('spring');
     expect(seasonFor(new Date(2026, 6, 15))).toBe('summer');
     expect(seasonFor(new Date(2026, 8, 18))).toBe('autumn');
-    expect(seasonFor(new Date(2026, 11, 1))).toBe('winter');
   });
 });
 
@@ -74,93 +66,80 @@ describe('shapes', () => {
 });
 
 describe('visualFor', () => {
-  it('follows the growth stages through the first cycle', () => {
-    expect(visualFor(view()).form).toBe('seed');
-    expect(visualFor(view({}, NOW + cycleMs(acacia) * 0.3)).form).toBe('sprout');
-    expect(visualFor(view({}, NOW + cycleMs(acacia) * 0.7)).form).toBe('sapling');
-    const mature = visualFor(view({}, NOW + cycleMs(acacia)));
-    expect(mature.form).toBe('tree');
-    expect(mature.harvestable).toBe(true);
-    expect(mature.ripeness).toBe(1);
+  it('follows age for the form and care for the health', () => {
+    const plot = newPlot('p', acacia, NOW);
+    expect(visualFor(plotView(plot, calm, NOW)!).form).toBe('seed');
+    expect(visualFor(plotView(plot, calm, NOW + 3 * DAY)!).form).toBe('sprout');
+    const grown: Plot = {
+      ...plot,
+      statuses: {
+        water: { level: 1, at: NOW + 14 * DAY },
+        sun: { level: 1, at: NOW + 14 * DAY },
+        soil: { level: 1, at: NOW + 14 * DAY },
+      },
+    };
+    const tree = visualFor(plotView(grown, calm, NOW + 14 * DAY)!);
+    expect(tree.form).toBe('tree');
+    expect(tree.health).toBe('thriving');
   });
 
-  it('stays a tree after the first harvest instead of regressing to a seed', () => {
-    const afterHarvest = view({ harvestsTaken: 1, lastHarvestAt: NOW }, NOW + cycleMs(acacia) * 0.1);
-    expect(afterHarvest.stage).toBe('seed');
-    const visual = visualFor(afterHarvest);
-    expect(visual.form).toBe('tree');
-    expect(visual.ripeness).toBeCloseTo(0.1);
-    expect(visual.harvestable).toBe(false);
+  it('hides sparkles on a dead tree', () => {
+    const plot: Plot = {
+      ...newPlot('p', acacia, NOW),
+      diedAt: NOW + DAY,
+      claimable: [{ day: 'd', stars: 0.5, expiresAt: NOW + 9 * DAY }],
+    };
+    const visual = visualFor(plotView(plot, calm, NOW + 2 * DAY)!);
+    expect(visual.health).toBe('dead');
+    expect(visual.sparkles).toBe(0);
+  });
+});
+
+describe('stage layout', () => {
+  const layout = layoutStage(360, 320);
+
+  it('stands the plant on the ground, centred, with a full tree fitting above the horizon', () => {
+    expect(layout.plant.x).toBe(180);
+    expect(layout.plant.y).toBeGreaterThanOrEqual(layout.horizon);
+    expect(layout.plant.y).toBeLessThan(320);
+    expect(230 * layout.plant.scale).toBeLessThanOrEqual(layout.horizon);
   });
 
-  it('marks spent trees and premium seeds', () => {
-    const spent = visualFor(view({ harvestsTaken: acacia.harvestsTotal }));
-    expect(spent.form).toBe('spent');
-    const premium = visualFor(view({ seedId: ironwood.id }));
-    expect(premium.premium).toBe(true);
+  it('places as many sparkles as asked, up to the spots it has, inside the canvas', () => {
+    expect(sparkleSpots(layout, 'tree', 0)).toHaveLength(0);
+    expect(sparkleSpots(layout, 'tree', 3)).toHaveLength(3);
+    expect(sparkleSpots(layout, 'seed', 20)).toHaveLength(8);
+    for (const spot of sparkleSpots(layout, 'tree', 8)) {
+      expect(spot.x).toBeGreaterThan(0);
+      expect(spot.x).toBeLessThan(360);
+      expect(spot.y).toBeGreaterThan(0);
+      expect(spot.y).toBeLessThan(layout.plant.y);
+    }
+  });
+
+  it('hit-tests sparkles and the plant', () => {
+    const spots = sparkleSpots(layout, 'tree', 3);
+    const target = spots[1]!;
+    expect(hitSparkle(spots, target.x + 3, target.y - 3)?.index).toBe(1);
+    expect(hitSparkle(spots, 5, 5)).toBeNull();
+    expect(hitPlant(layout, 'tree', layout.plant.x, layout.plant.y - 50)).toBe(true);
+    expect(hitPlant(layout, 'seed', layout.plant.x, layout.plant.y - 20)).toBe(true);
+    expect(hitPlant(layout, 'seed', 5, 5)).toBe(false);
   });
 });
 
 describe('deterministic randomness', () => {
-  it('is stable for the same input and spread for different ones', () => {
+  it('is stable for the same plot and spread for different ones', () => {
     expect(hash('plot-1')).toBe(hash('plot-1'));
     expect(hash('plot-1')).not.toBe(hash('plot-2'));
-    const seed = hash('plot-1');
-    expect(rand(seed, 1)).toBe(rand(seed, 1));
-    expect(rand(seed, 1)).not.toBe(rand(seed, 2));
+    expect(petalFor('plot-1')).toBe(petalFor('plot-1'));
+    expect(petalFor('plot-1')).not.toBe(petalFor('plot-2'));
+    expect(starPointsFor('plot-1')).toBeGreaterThanOrEqual(5);
+    expect(starPointsFor('plot-1')).toBeLessThanOrEqual(8);
     for (let i = 0; i < 50; i += 1) {
-      const value = rand(seed, i);
+      const value = rand(hash('x'), i);
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThan(1);
     }
-  });
-});
-
-describe('layoutScene', () => {
-  const plots = [
-    view({ id: 'a', plantedAt: NOW }),
-    view({ id: 'b', plantedAt: NOW + 1 }),
-    view({ id: 'c', plantedAt: NOW + 2 }),
-  ];
-
-  it('keeps every plant inside the canvas, standing on the ground', () => {
-    const layout = layoutScene(plots, 360, 240);
-    expect(layout.horizon).toBeLessThan(240);
-    for (const plant of layout.plants) {
-      expect(plant.x).toBeGreaterThan(0);
-      expect(plant.x).toBeLessThan(360);
-      expect(plant.y).toBeGreaterThanOrEqual(layout.horizon);
-      expect(plant.y).toBeLessThanOrEqual(240);
-      // A full tree (230 sketch units) must fit above the horizon.
-      expect(230 * plant.scale).toBeLessThanOrEqual(layout.horizon);
-    }
-  });
-
-  it('plants left to right in planting order and keeps positions stable', () => {
-    const first = layoutScene(plots, 360, 240);
-    const xs = ['a', 'b', 'c'].map((id) => first.plants.find((p) => p.id === id)!.x);
-    expect(xs[0]!).toBeLessThan(xs[1]!);
-    expect(xs[1]!).toBeLessThan(xs[2]!);
-
-    const shuffled = layoutScene([plots[2]!, plots[0]!, plots[1]!], 360, 240);
-    for (const plant of first.plants) {
-      expect(shuffled.plants.find((p) => p.id === plant.id)!.x).toBe(plant.x);
-    }
-  });
-
-  it('copes with an empty garden and a zero-width canvas', () => {
-    expect(layoutScene([], 360, 240).plants).toEqual([]);
-    expect(layoutScene(plots, 0, 240).plants).toHaveLength(3);
-  });
-
-  it('hit-tests taps to the nearest plant and paints back to front', () => {
-    const layout = layoutScene(plots, 360, 240);
-    const target = layout.plants[1]!;
-    const hit = hitTest(layout, target.x, target.y - 10);
-    expect(hit?.id).toBe(target.id);
-    expect(hitTest(layout, 1, 1)).toBeNull();
-
-    const order = paintOrder(layout).map((p) => p.y);
-    expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 });

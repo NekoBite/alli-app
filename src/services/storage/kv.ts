@@ -31,6 +31,8 @@ export const KEYS = {
   /** Fixes the background location task collected while the app was away. */
   runBackgroundFixes: 'alli.run.bgfixes',
   garden: 'alli.garden.plots',
+  /** Taps on each tree today, so closing the app mid-way keeps the count. */
+  gardenTaps: 'alli.garden.taps',
   cart: 'alli.market.cart',
   walletAddress: 'alli.wallet.address',
   onboarded: 'alli.onboarded',
