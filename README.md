@@ -111,9 +111,13 @@ Seeds play one of two profiles, both driven by the data in `rules.ts`:
   synthetic fertiliser is instant, costs ALLI and raises the garden's **carbon score**, which
   multiplies every low-carbon reward down (or up, for a clean farm). Each minigame ends on a lesson.
 
-Only the compost minigame exists so far; a condition whose minigame is not built shows its lesson
-and no button. Stars are the same stars the run quest pays, and the ledger counts them in
-**sparkles**, a hundredth of a star, so a garden day can pay a fraction (migration 003).
+Three minigames exist, each a pure rules module, a Skia scene drawn from plain values, and a
+thin interactive component: **Gather compost** (tap the farm waste, hold to turn the heap),
+**Mulch the roots** (drag straw onto the soil ring before the sun is up, during a heatwave or
+drought) and **Haze control** (tap embers out and drag residue piles into the bale, during the
+burning season). A win grants what the game teaches; nothing else about the round is sent. Stars
+are the same stars the run quest pays, and the ledger counts them in **sparkles**, a hundredth of a
+star, so a garden day can pay a fraction (migration 003).
 
 Everything that decides what a tree is worth or looks like is pure and tested: `care.ts` for the
 engine, `scene/stage.ts` for geometry and hit-testing, `scene/visual.ts` for the mapping. The
