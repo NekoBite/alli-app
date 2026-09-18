@@ -31,6 +31,8 @@ export type { StepWindow, StepCredit } from '../../../src/features/run/steps.ts'
 export {
   calculateReward,
   starsToAlli,
+  toSparkles,
+  fromSparkles,
   questProgress,
   stepsToGo,
   explainFlag,

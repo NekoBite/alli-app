@@ -16,6 +16,10 @@ export type SeasonPalette = {
   trunk: string;
   /** Colour of the fruit a tree carries when a harvest is ripening. */
   fruit: string;
+  /** Leaf colour once the tree is wilting. */
+  leafWilting: string;
+  /** The rolling hills behind the tree. */
+  hill: string;
   title: string;
 };
 
@@ -29,6 +33,8 @@ export const PALETTES: Record<Season, SeasonPalette> = {
     grass: '#4A8437',
     trunk: '#786c4f',
     fruit: '#8b2a34',
+    leafWilting: '#D9C27A',
+    hill: '#5E9C4B',
     title: 'Spring garden',
   },
   summer: {
@@ -40,6 +46,8 @@ export const PALETTES: Record<Season, SeasonPalette> = {
     grass: '#75b560',
     trunk: '#786c4f',
     fruit: '#ECAD32',
+    leafWilting: '#C9B25A',
+    hill: '#3E7A2D',
     title: 'Summer garden',
   },
   autumn: {
@@ -51,6 +59,8 @@ export const PALETTES: Record<Season, SeasonPalette> = {
     grass: '#ECAD32',
     trunk: '#786c4f',
     fruit: '#C34040',
+    leafWilting: '#8F6A2A',
+    hill: '#A8741C',
     title: 'Autumn garden',
   },
   winter: {
@@ -62,14 +72,19 @@ export const PALETTES: Record<Season, SeasonPalette> = {
     grass: '#224A14',
     trunk: '#392A0C',
     fruit: '#E7CF50',
+    leafWilting: '#5C6B4A',
+    hill: '#C6E9EE',
     title: 'Winter garden',
   },
 };
 
 /** Premium (USDT) trees carry the brand gold so they read as premium at a glance. */
 export const PREMIUM_ACCENT = '#C6A664';
-/** A tree with no harvests left. */
-export const SPENT_TINT = '#8A8F8C';
+/** A dead tree. */
+export const DEAD_TINT = '#8A8F8C';
+/** Sparkles: the day's stars waiting to be collected. */
+export const SPARKLE = '#FFD84D';
+export const SPARKLE_GLOW = '#FFF2A8';
 /** Outline weight, in scene units, matching the sketch's strokeWeight(2). */
 export const OUTLINE = '#1B1B1B';
 

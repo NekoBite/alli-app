@@ -1,80 +1,215 @@
 import { isMock } from '@/config/env';
+import {
+  adoptPractice,
+  carbonMultiplier,
+  carbonScore,
+  claim,
+  fertilise,
+  fillSun,
+  healthAt,
+  newPlot,
+  settle,
+  startCompost,
+  water,
+  type GardenContext,
+} from '@/features/garden/care';
 import { findSeed } from '@/features/garden/catalog';
-import { plotView } from '@/features/garden/growth';
-import type { Plot } from '@/features/garden/types';
+import { CONDITIONS, FERTILISERS, MINIGAMES } from '@/features/garden/rules';
+import type {
+  Condition,
+  ConditionId,
+  FertiliserId,
+  Garden,
+  MinigameId,
+  Plot,
+} from '@/features/garden/types';
 import { delay, request } from './client';
+import { mockStars } from './run';
 
+export type ClaimResult = { plot: Plot; stars: number; starsBalance: number };
+export type FertiliseResult = { plot: Plot; starsBalance?: number };
+
+/**
+ * The garden's backend surface. Every call settles the plot first (see
+ * `settle` in care.ts) so the daily rollover is judged before anything moves.
+ *
+ * What is deliberately not here: tap counts, minigame scores, or any client
+ * claim about a status level. The phone reports that an action happened; the
+ * server decides what it is worth, and it accepts one sun fill and one
+ * minigame win per tree per day.
+ */
 export interface GardenApi {
-  getPlots(): Promise<Plot[]>;
-  /** Charges the seed price (ALLI or USDT) and returns the new plot. */
+  getGarden(): Promise<Garden>;
+  /** Charges the seed price (ALLI or USDT) and plants it. */
   plant(seedId: string): Promise<Plot>;
-  /** Pays out the harvest and returns the updated plot plus the ALLI credited. */
-  harvest(plotId: string): Promise<{ plot: Plot; alli: number }>;
+  water(plotId: string): Promise<Plot>;
+  /** The phone counted the taps; the server fills the meter once a day. */
+  fillSun(plotId: string): Promise<Plot>;
+  /** Charges stars or ALLI as the fertiliser demands, or spends a compost unit. */
+  fertilise(plotId: string, kind: FertiliserId): Promise<FertiliseResult>;
+  /** Pays every sparkle on the canopy into the star ledger. */
+  claim(plotId: string): Promise<ClaimResult>;
+  /** A minigame was won: start a compost heap or grant the practice it teaches. */
+  completeMinigame(plotId: string, game: MinigameId): Promise<Plot>;
 }
 
 const live: GardenApi = {
-  getPlots: () => request('/v1/garden/plots'),
+  getGarden: () => request('/v1/garden'),
   plant: (seedId) => request('/v1/garden/plots', { method: 'POST', body: { seedId } }),
-  harvest: (plotId) => request(`/v1/garden/plots/${plotId}/harvest`, { method: 'POST' }),
+  water: (plotId) => request(`/v1/garden/plots/${plotId}/water`, { method: 'POST' }),
+  fillSun: (plotId) => request(`/v1/garden/plots/${plotId}/sun`, { method: 'POST' }),
+  fertilise: (plotId, kind) =>
+    request(`/v1/garden/plots/${plotId}/fertilise`, { method: 'POST', body: { kind } }),
+  claim: (plotId) => request(`/v1/garden/plots/${plotId}/claim`, { method: 'POST' }),
+  completeMinigame: (plotId, game) =>
+    request(`/v1/garden/plots/${plotId}/minigames/${game}`, { method: 'POST' }),
 };
 
-const HOUR = 3_600_000;
+// --- mock -----------------------------------------------------------------
 
-let mockPlots: Plot[] = [
-  {
-    id: 'plot-seed-1',
-    seedId: 'seed-acacia',
-    // Planted 30 h ago with a 24 h cycle, so it is ready to harvest.
-    plantedAt: Date.now() - 30 * HOUR,
-    lastHarvestAt: Date.now() - 30 * HOUR,
-    harvestsTaken: 0,
-  },
-  {
-    id: 'plot-seed-2',
-    seedId: 'seed-mangrove-premium',
-    plantedAt: Date.now() - 12 * HOUR,
-    lastHarvestAt: Date.now() - 12 * HOUR,
-    harvestsTaken: 0,
-    realTreeRef: 'TH-MANGROVE-2026-0041',
-  },
-];
+const HOUR = 3_600_000;
+const DAY = 86_400_000;
+
+/**
+ * The server issues conditions from the calendar with some randomness. The
+ * mock issues every condition whose month list contains this month, for the
+ * whole month, so the low-carbon loop can be seen without waiting for weather.
+ */
+function seasonalConditions(now: number): Condition[] {
+  const date = new Date(now);
+  const month = date.getMonth();
+  const from = new Date(date.getFullYear(), month, 1).getTime();
+  const to = new Date(date.getFullYear(), month + 1, 1).getTime();
+  return (Object.keys(CONDITIONS) as ConditionId[])
+    .filter((id) => CONDITIONS[id].months.includes(month))
+    .map((id) => ({ id, from, to }));
+}
+
+function seedGarden(now: number): Garden {
+  const mangrove = findSeed('seed-mangrove-premium')!;
+  const acacia = findSeed('seed-acacia')!;
+
+  // A premium tree two weeks in, thriving, with yesterday's sparkles waiting.
+  const premium: Plot = {
+    ...newPlot('plot-mangrove', mangrove, now - 14 * DAY, 'TH-MANGROVE-2026-0041'),
+    statuses: {
+      water: { level: 0.9, at: now - 6 * HOUR },
+      sun: { level: 1, at: now - 20 * HOUR },
+      soil: { level: 0.8, at: now - 2 * DAY },
+    },
+    streakDays: 5,
+    claimable: [{ day: 'yesterday', stars: 0.12, expiresAt: now + 2 * DAY }],
+  };
+
+  // A low-carbon tree three days in and thirsty, with a compost unit ready.
+  const standard: Plot = {
+    ...newPlot('plot-acacia', acacia, now - 3 * DAY),
+    statuses: {
+      water: { level: 1, at: now - 30 * HOUR },
+      sun: { level: 1, at: now - 20 * HOUR },
+      soil: { level: 1, at: now - DAY },
+    },
+    streakDays: 2,
+    compostReady: 1,
+  };
+
+  return { plots: [standard, premium], conditions: seasonalConditions(now) };
+}
+
+let mockGarden: Garden = seedGarden(Date.now());
+
+function ctx(): GardenContext {
+  return {
+    conditions: mockGarden.conditions,
+    carbonMultiplier: carbonMultiplier(carbonScore(mockGarden.plots)),
+  };
+}
+
+/** Settles every plot to now, as the server does before answering anything. */
+function settled(now: number): Garden {
+  mockGarden = {
+    ...mockGarden,
+    plots: mockGarden.plots.map((plot) => {
+      const seed = findSeed(plot.seedId);
+      return seed ? settle(plot, seed, ctx(), now) : plot;
+    }),
+  };
+  return mockGarden;
+}
+
+function find(plotId: string, now: number): { plot: Plot; seed: NonNullable<ReturnType<typeof findSeed>> } {
+  settled(now);
+  const plot = mockGarden.plots.find((p) => p.id === plotId);
+  if (!plot) throw new Error('Plot not found.');
+  const seed = findSeed(plot.seedId);
+  if (!seed) throw new Error('Unknown seed.');
+  return { plot, seed };
+}
+
+function replace(plot: Plot): Plot {
+  mockGarden = { ...mockGarden, plots: mockGarden.plots.map((p) => (p.id === plot.id ? plot : p)) };
+  return plot;
+}
 
 const mock: GardenApi = {
-  getPlots: () => delay([...mockPlots]),
+  getGarden: () => delay(structuredClone(settled(Date.now()))),
 
   async plant(seedId) {
     const seed = findSeed(seedId);
     if (!seed) throw new Error('Unknown seed.');
     const now = Date.now();
-    const plot: Plot = {
-      id: `plot-${now}`,
-      seedId,
-      plantedAt: now,
-      lastHarvestAt: now,
-      harvestsTaken: 0,
-    };
-    mockPlots = [plot, ...mockPlots];
+    settled(now);
+    // TODO: the ALLI or USDT charge happens server-side. Nothing is debited here.
+    const plot = newPlot(`plot-${now}`, seed, now);
+    mockGarden = { ...mockGarden, plots: [plot, ...mockGarden.plots] };
     return delay(plot, 700);
   },
 
-  async harvest(plotId) {
-    const existing = mockPlots.find((plot) => plot.id === plotId);
-    if (!existing) throw new Error('Plot not found.');
-
-    const view = plotView(existing);
-    if (!view) throw new Error('Unknown seed.');
-    if (!view.harvestable) throw new Error('This tree is not ready yet.');
-
+  async water(plotId) {
     const now = Date.now();
-    const harvestsTaken = existing.harvestsTaken + 1;
-    const updated: Plot = {
-      ...existing,
-      harvestsTaken,
-      lastHarvestAt: now,
-      spentAt: harvestsTaken >= view.seed.harvestsTotal ? now : undefined,
-    };
-    mockPlots = mockPlots.map((plot) => (plot.id === plotId ? updated : plot));
-    return delay({ plot: updated, alli: view.seed.yieldAlli }, 700);
+    const { plot, seed } = find(plotId, now);
+    return delay(replace(water(plot, seed, mockGarden.conditions, now)), 250);
+  },
+
+  async fillSun(plotId) {
+    const now = Date.now();
+    const { plot, seed } = find(plotId, now);
+    return delay(replace(fillSun(plot, seed, mockGarden.conditions, now)), 250);
+  },
+
+  async fertilise(plotId, kind) {
+    const now = Date.now();
+    const { plot, seed } = find(plotId, now);
+    const next = fertilise(plot, seed, mockGarden.conditions, kind, now);
+    const rule = FERTILISERS[kind];
+    let starsBalance: number | undefined;
+    if (rule.priceStars) starsBalance = mockStars.debit(rule.priceStars);
+    // TODO: `priceAlli` is charged server-side. The mock does not debit ALLI.
+    replace(next);
+    return delay({ plot: next, starsBalance }, 500);
+  },
+
+  async claim(plotId) {
+    const now = Date.now();
+    const { plot } = find(plotId, now);
+    const result = claim(plot, now);
+    if (result.stars <= 0) throw new Error('Nothing to collect yet.');
+    replace(result.plot);
+    const starsBalance = mockStars.credit(result.stars);
+    return delay({ plot: result.plot, stars: result.stars, starsBalance }, 300);
+  },
+
+  async completeMinigame(plotId, game) {
+    const now = Date.now();
+    const { plot, seed } = find(plotId, now);
+    if (healthAt(plot, seed, mockGarden.conditions, now) === 'dead') {
+      throw new Error('This tree has died.');
+    }
+    const grants = MINIGAMES[game].grants;
+    let next = plot;
+    if (grants.compost) next = startCompost(next, seed, now);
+    if (grants.practice) next = adoptPractice(next, seed, grants.practice);
+    return delay(replace(next), 400);
   },
 };
 

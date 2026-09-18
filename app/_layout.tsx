@@ -33,6 +33,10 @@ export default function RootLayout() {
         <Stack.Screen name="run/stars" options={{ title: 'Stars' }} />
         <Stack.Screen name="garden/shop" options={{ title: 'Seed shop' }} />
         <Stack.Screen name="garden/plot/[id]" options={{ title: 'Tree' }} />
+        <Stack.Screen
+          name="garden/minigame/[game]"
+          options={{ title: 'Minigame', presentation: 'modal' }}
+        />
         <Stack.Screen name="market/product/[id]" options={{ title: 'Product' }} />
         <Stack.Screen name="market/cart" options={{ title: 'Cart' }} />
         <Stack.Screen name="market/checkout" options={{ title: 'Checkout' }} />

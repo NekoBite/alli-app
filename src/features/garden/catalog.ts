@@ -1,14 +1,16 @@
 import type { Seed } from './types';
 
 /**
- * Seed catalogue. Prices and yields are placeholders for a scaffold — they are
+ * Seed catalogue. Prices and rewards are placeholders for a scaffold — they are
  * not a balanced economy. Before launch these must move server-side so they can
  * be tuned without an app release, and be checked against the ALLI emission
- * schedule (see docs/alli-app-architecture.md).
+ * schedule (see docs/architecture.md §4).
  *
- * Sanity check on the numbers below: a standard seed pays back its ALLI cost
- * over its harvests and then some; a premium seed is bought with USDT, so its
- * ALLI yield is real emission and has to be funded by the treasury.
+ * Standard seeds are bought with ALLI and play the low-carbon loop: more to do,
+ * and the reward scales with how the farm is run. Premium seeds are bought with
+ * USDT, pay more and play the simple loop. A tree lives thirty days either way,
+ * so `starsPerDay × lifetimeDays` is the most a seed can ever pay before the
+ * streak and carbon multipliers.
  */
 export const SEEDS: Seed[] = [
   {
@@ -18,11 +20,11 @@ export const SEEDS: Seed[] = [
     tier: 'standard',
     currency: 'ALLI',
     price: 50,
-    growthHours: 24,
-    yieldAlli: 12,
-    harvestsTotal: 6,
+    careProfile: 'lowCarbon',
+    starsPerDay: 0.02,
+    lifetimeDays: 30,
     runBonus: 0.02,
-    blurb: 'Fast-growing starter tree. Cheap, forgiving, and pays back in under a week.',
+    blurb: 'Fast-growing starter tree. Cheap, forgiving, and a good place to learn the farm.',
   },
   {
     id: 'seed-neem',
@@ -31,11 +33,11 @@ export const SEEDS: Seed[] = [
     tier: 'standard',
     currency: 'ALLI',
     price: 120,
-    growthHours: 48,
-    yieldAlli: 34,
-    harvestsTotal: 8,
+    careProfile: 'lowCarbon',
+    starsPerDay: 0.05,
+    lifetimeDays: 30,
     runBonus: 0.03,
-    blurb: 'Slower, but each harvest is worth nearly three Acacias.',
+    blurb: 'Pays more than twice an Acacia for the same care.',
   },
   {
     id: 'seed-teak',
@@ -44,11 +46,11 @@ export const SEEDS: Seed[] = [
     tier: 'standard',
     currency: 'ALLI',
     price: 300,
-    growthHours: 72,
-    yieldAlli: 95,
-    harvestsTotal: 10,
+    careProfile: 'lowCarbon',
+    starsPerDay: 0.12,
+    lifetimeDays: 30,
     runBonus: 0.05,
-    blurb: 'The long game. Highest ALLI-priced yield and a solid run bonus.',
+    blurb: 'The long game. Best ALLI-priced reward and a solid run bonus.',
   },
   {
     id: 'seed-mangrove-premium',
@@ -57,11 +59,11 @@ export const SEEDS: Seed[] = [
     tier: 'premium',
     currency: 'USDT',
     price: 5,
-    growthHours: 36,
-    yieldAlli: 220,
-    harvestsTotal: 12,
+    careProfile: 'simple',
+    starsPerDay: 0.1,
+    lifetimeDays: 30,
     runBonus: 0.1,
-    blurb: 'Coastal carbon sink. Buy with USDT, harvest in ALLI, +10% on every run.',
+    blurb: 'Coastal carbon sink. Simple care, paid in stars every day it thrives, +10% on every run.',
   },
   {
     id: 'seed-ironwood-premium',
@@ -70,11 +72,11 @@ export const SEEDS: Seed[] = [
     tier: 'premium',
     currency: 'USDT',
     price: 20,
-    growthHours: 60,
-    yieldAlli: 1_050,
-    harvestsTotal: 15,
+    careProfile: 'simple',
+    starsPerDay: 0.5,
+    lifetimeDays: 30,
     runBonus: 0.2,
-    blurb: 'The flagship tree. Highest yield in the garden and a +20% run multiplier.',
+    blurb: 'The flagship tree. Highest daily reward in the garden and a +20% run multiplier.',
   },
 ];
 

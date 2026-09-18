@@ -22,6 +22,16 @@ export function formatPoints(points: number): string {
   return Math.round(points).toLocaleString('en-US');
 }
 
+/**
+ * Stars, to the ledger's precision: "3", "0.5", "12.25". Whole stars show no
+ * decimals, so the run quest still reads as it always did.
+ */
+export function formatStars(stars: number): string {
+  if (!Number.isFinite(stars)) return '0';
+  const rounded = Math.round(stars * 100) / 100;
+  return rounded.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
 /** Metres -> km with one decimal, the unit runners actually think in. */
 export function formatDistance(metres: number): string {
   return (metres / 1000).toFixed(2);

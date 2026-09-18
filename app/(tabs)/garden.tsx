@@ -1,174 +1,169 @@
-import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { Alert, FlatList, StyleSheet, View } from 'react-native';
-
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Button,
-  Card,
-  EmptyState,
-  Pill,
-  ProgressBar,
-  Row,
-  Screen,
-  StatTile,
-  Text,
-} from '@/components';
+  FlatList,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type ViewToken,
+} from 'react-native';
+
+import { Button, Card, Pill, Screen, Text } from '@/components';
 import { useGardenStore } from '@/features/garden/store';
-import { remainingYield } from '@/features/garden/growth';
-import { GardenScene } from '@/features/garden/scene';
 import type { PlotView } from '@/features/garden/types';
+import { TreePage } from '@/features/garden/ui';
 import { colors, spacing } from '@/theme';
-import { formatToken } from '@/utils/format';
-import { countdown } from '@/utils/time';
+
+type Page = { key: string; view?: PlotView };
+
+const VIEWABILITY = { itemVisiblePercentThreshold: 60 };
+
+/** Sparkles first, then trees in trouble, then the rest; the dead and retired last. */
+function rank(view: PlotView): number {
+  if (view.claimableStars > 0) return 0;
+  if (view.health === 'wilting') return 1;
+  if (view.health === 'stressed') return 2;
+  if (view.health === 'thriving') return 3;
+  return 4;
+}
 
 export default function GardenScreen() {
   const router = useRouter();
-  const { refresh, loading, harvest, views, multiplier } = useGardenStore();
+  const { width } = useWindowDimensions();
+  const { refresh, views, carbon, error } = useGardenStore();
+  const garden = useGardenStore((state) => state.garden);
+  const [tick, setTick] = useState(0);
+  const [index, setIndex] = useState(0);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const plots = views();
-  const ready = plots.filter((view) => view.harvestable);
-  const pending = ready.reduce((sum, view) => sum + view.seed.yieldAlli, 0);
+  // Re-project once a minute so the meters are seen to fall.
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
-  const onHarvest = async (view: PlotView) => {
-    try {
-      const alli = await harvest(view.id);
-      Alert.alert('Harvested', `${formatToken(alli, 'ALLI')} credited to your wallet.`);
-    } catch (error) {
-      Alert.alert('Could not harvest', (error as Error).message);
-    }
-  };
+  // `garden` and `tick` are what change the projection.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const current = useMemo(() => views(), [views, garden, tick]);
+  const idsKey = current
+    .map((v) => v.id)
+    .sort()
+    .join('|');
+
+  // Sort by need only when the set of trees changes, so a page does not jump
+  // out from under the player the moment they collect its sparkles.
+  const order = useMemo(
+    () =>
+      [...current]
+        .sort((a, b) => rank(a) - rank(b) || b.plantedAt - a.plantedAt)
+        .map((v) => v.id),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [idsKey],
+  );
+
+  const pages = useMemo<Page[]>(() => {
+    const byId = new Map(current.map((v) => [v.id, v]));
+    const trees = order
+      .map((id) => byId.get(id))
+      .filter((v): v is PlotView => v !== undefined)
+      .map((view) => ({ key: view.id, view }));
+    return [...trees, { key: 'plant' }];
+  }, [order, current]);
+
+  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const first = viewableItems[0];
+    if (first && typeof first.index === 'number') setIndex(first.index);
+  }, []);
+
+  const thriving = pages.filter((p) => p.view?.health === 'thriving').length;
+  const { score, multiplier } = carbon();
 
   return (
-    <Screen scroll={false}>
+    <Screen scroll={false} style={styles.screen}>
+      <View style={styles.header}>
+        <Text variant="caption" color={colors.ink2}>
+          {pages.length - 1} {pages.length - 1 === 1 ? 'tree' : 'trees'} · {thriving} thriving
+        </Text>
+        <Pill
+          label={`Carbon ${score > 0 ? '+' : ''}${score} · ${multiplier.toFixed(2)}×`}
+          color={score <= 0 ? colors.teal : colors.warning}
+        />
+      </View>
+      {error ? (
+        <Text variant="caption" color={colors.danger} style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
+
       <FlatList
-        data={plots}
-        keyExtractor={(item) => item.id}
-        refreshing={loading}
-        onRefresh={refresh}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.list}
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <GardenScene
-              plots={plots}
-              onPressPlant={(view) =>
-                router.push({ pathname: '/garden/plot/[id]', params: { id: view.id } })
-              }
-              onPressGround={() => router.push('/garden/shop')}
-            />
-
-            <Card style={styles.card}>
-              <View style={styles.stats}>
-                <StatTile label="Trees" value={String(plots.length)} />
-                <StatTile
-                  label="Ready"
-                  value={String(ready.length)}
-                  color={ready.length ? colors.green : colors.ink}
-                />
-                <StatTile
-                  label="Run bonus"
-                  value={`+${((multiplier() - 1) * 100).toFixed(0)}%`}
-                  color={colors.cyan}
-                />
-              </View>
-              {pending > 0 ? (
-                <Row
-                  label="Waiting to be harvested"
-                  value={formatToken(pending, 'ALLI')}
-                  valueColor={colors.green}
-                  emphasis
-                />
-              ) : null}
-            </Card>
-
-            <Button label="Buy seeds" size="lg" onPress={() => router.push('/garden/shop')} />
-          </View>
+        data={pages}
+        keyExtractor={(page) => page.key}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={VIEWABILITY}
+        renderItem={({ item }) =>
+          item.view ? (
+            <TreePage view={item.view} width={width} />
+          ) : (
+            <PlantPage width={width} onPlant={() => router.push('/garden/shop')} first={pages.length === 1} />
+          )
         }
-        ListEmptyComponent={
-          <EmptyState
-            title="Your garden is empty"
-            body="Buy a seed with ALLI, or a premium seed with USDT for a bigger yield and a larger run bonus."
-            actionLabel="Open the seed shop"
-            onAction={() => router.push('/garden/shop')}
-          />
-        }
-        renderItem={({ item }) => (
-          <PlotCard
-            view={item}
-            onOpen={() => router.push({ pathname: '/garden/plot/[id]', params: { id: item.id } })}
-            onHarvest={() => void onHarvest(item)}
-          />
-        )}
       />
+
+      <View style={styles.dots} accessibilityLabel={`Page ${index + 1} of ${pages.length}`}>
+        {pages.map((page, i) => (
+          <View key={page.key} style={[styles.dot, i === index && styles.dotActive]} />
+        ))}
+      </View>
     </Screen>
   );
 }
 
-function PlotCard({
-  view,
-  onOpen,
-  onHarvest,
-}: {
-  view: PlotView;
-  onOpen: () => void;
-  onHarvest: () => void;
-}) {
-  const premium = view.seed.tier === 'premium';
-
+function PlantPage({ width, onPlant, first }: { width: number; onPlant: () => void; first: boolean }) {
   return (
-    <Card tone={premium ? 'premium' : 'default'} onPress={onOpen} style={styles.plot}>
-      <View style={styles.plotHead}>
-        <View style={styles.plotTitle}>
-          <Text variant="bodyStrong">{view.seed.name}</Text>
-          <Text variant="caption" color={colors.ink2}>
-            {view.seed.species}
-          </Text>
-        </View>
-        <Pill
-          label={view.stage}
-          color={view.harvestable ? colors.green : premium ? colors.gold : colors.ink2}
-          dot
-        />
-      </View>
-
-      <ProgressBar
-        progress={view.progress}
-        color={view.harvestable ? colors.green : premium ? colors.gold : colors.cyan}
-      />
-
-      <Row
-        label={view.harvestable ? 'Ready now' : `Next harvest in ${countdown(view.msUntilHarvest)}`}
-        value={`${view.harvestsRemaining} left · ${formatToken(remainingYield(view), 'ALLI')}`}
-        valueColor={colors.ink2}
-      />
-
-      {view.realTreeRef ? (
-        <Text variant="caption" color={colors.teal}>
-          Paired with a real planting · {view.realTreeRef}
+    <View style={[styles.plantPage, { width }]}>
+      <Card style={styles.plantCard}>
+        <Text variant="title" center>
+          {first ? 'Your garden is empty' : 'Plant another'}
         </Text>
-      ) : null}
-
-      {view.harvestable ? (
-        <Button
-          label={`Harvest ${formatToken(view.seed.yieldAlli, 'ALLI')}`}
-          variant={premium ? 'premium' : 'primary'}
-          onPress={onHarvest}
-        />
-      ) : null}
-    </Card>
+        <Text variant="body" color={colors.ink2} center>
+          A tree lives thirty days. Keep its water, sun and soil above the line and every night
+          leaves stars on its branches.
+        </Text>
+        <Text variant="caption" color={colors.ink3} center>
+          ALLI seeds play the low-carbon farm: weather moves the lines, compost is gathered, and
+          how you farm sets the multiplier. USDT seeds keep it simple.
+        </Text>
+        <Button label="Open the seed shop" size="lg" onPress={onPlant} />
+      </Card>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  list: { paddingBottom: spacing.xxl, gap: spacing.md },
-  header: { gap: spacing.lg, paddingTop: spacing.lg },
-  card: { gap: spacing.md },
-  stats: { flexDirection: 'row', gap: spacing.md },
-  plot: { gap: spacing.md },
-  plotHead: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md },
-  plotTitle: { flex: 1, gap: 2 },
+  screen: { paddingHorizontal: 0 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  error: { paddingHorizontal: spacing.lg },
+  dots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.ink3 },
+  dotActive: { backgroundColor: colors.green, width: 18 },
+  plantPage: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl },
+  plantCard: { gap: spacing.md },
 });

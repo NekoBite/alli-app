@@ -1,6 +1,6 @@
 import { isMock } from '@/config/env';
 import { RUN_CREDIT_RULES, extraRunsCost } from '@/features/run/credits';
-import { calculateReward, starsToAlli } from '@/features/run/rewards';
+import { calculateReward, roundStars, starsToAlli } from '@/features/run/rewards';
 import { DEFAULT_SHOE_TIER, type ShoeTier } from '@/features/run/shoes';
 import { creditStepSamples } from '@/features/run/steps';
 import type { RunEntitlement, RunSession, RunSummary } from '@/features/run/types';
@@ -133,6 +133,24 @@ let mockEntitlement: RunEntitlement = {
 };
 
 let mockHistory: RunSummary[] = [];
+
+/**
+ * The mock's star ledger, shared with the garden mock so a sparkle collected
+ * on a tree shows up in the same balance the run tab reads. In production
+ * both write to the one `star_ledger` table.
+ */
+export const mockStars = {
+  balance: () => mockProfile.starsBalance,
+  credit(stars: number): number {
+    mockProfile = { ...mockProfile, starsBalance: roundStars(mockProfile.starsBalance + stars) };
+    return mockProfile.starsBalance;
+  },
+  debit(stars: number): number {
+    if (stars > mockProfile.starsBalance) throw new Error('You do not have that many stars.');
+    mockProfile = { ...mockProfile, starsBalance: roundStars(mockProfile.starsBalance - stars) };
+    return mockProfile.starsBalance;
+  },
+};
 
 /** The entitlement as the server would report it now, with a fresh clock. */
 function readEntitlement(): RunEntitlement {

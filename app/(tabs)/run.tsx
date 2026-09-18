@@ -21,7 +21,7 @@ import { SHOES, SHOE_ORDER, shoeFor } from '@/features/run/shoes';
 import { useRunStore } from '@/features/run/store';
 import type { RunSummary } from '@/features/run/types';
 import { colors, radius, spacing } from '@/theme';
-import { formatDistance, formatDuration, formatPoints, formatToken } from '@/utils/format';
+import { formatDistance, formatDuration, formatPoints, formatToken, formatStars } from '@/utils/format';
 import { formatServerTime, relativeTime } from '@/utils/time';
 
 export default function RunScreen() {
@@ -140,7 +140,7 @@ export default function RunScreen() {
               <View style={styles.rowBetween}>
                 <Text variant="heading">Stars</Text>
                 <Text variant="title" color={colors.gold}>
-                  {formatPoints(profile.starsBalance)}
+                  {formatStars(profile.starsBalance)}
                 </Text>
               </View>
               <Text variant="caption" color={colors.ink2}>
@@ -193,7 +193,7 @@ export default function RunScreen() {
                   label="Move minutes"
                   value={Math.round(totals.movingSeconds / 60).toString()}
                 />
-                <StatTile label="Stars" value={totals.stars.toString()} color={colors.gold} />
+                <StatTile label="Stars" value={formatStars(totals.stars)} color={colors.gold} />
               </View>
             </Card>
 

@@ -8,8 +8,9 @@ React Native (Expo SDK 57) app for Android and iOS. Four features:
    **ALLI** on BNB Smart Chain. The reward scales with the tier of NFT footwear held. Each
    recorded run spends a run credit; credits come from a monthly membership or are bought
    outright.
-2. **Garden** — plant seeds bought with ALLI, or premium seeds bought with BSC **USDT** for a
-   higher yield and a larger run bonus.
+2. **Garden** — a tree to look after. Seeds bought with ALLI play the low-carbon farm; premium
+   seeds bought with BSC **USDT** play a simpler loop and pay more. Keep water, sun and soil above
+   the line and every night leaves stars on the branches.
 3. **Marketplace** — physical goods paid for in ALLI or USDT.
 4. **Wallet** — ALLI / USDT / BNB balances, send and receive, and a Visa card pairing flow.
 
@@ -62,6 +63,7 @@ app/                       expo-router routes (the file tree IS the navigation)
   run/active|summary       live run, then the reward breakdown
   run/credits|stars        buy run credits, renew membership, exchange stars
   garden/shop, plot/[id]   seed shop and per-tree detail
+  garden/minigame/[game]   the low-carbon minigames
   market/product/[id], cart, checkout
   wallet/send|receive|card
 src/
@@ -71,8 +73,10 @@ src/
   features/
     run/                   geo filtering, step credit, quest rules, shoe tiers,
                            credits, goals, draft, live-session hook, store
-    garden/                seed catalogue, growth math, store
-      scene/               the garden drawn as a scene (react-native-skia)
+    garden/                seed catalogue, care rules (data), care engine, store
+      scene/               one tree on its stage (react-native-skia)
+      ui/                  the tree page: meters, tap meter, actions
+      minigames/           shell + the games that earn compost and practices
     market/                product catalogue, cart, orders
     wallet/                balances, transfers, card state
   services/
@@ -82,21 +86,40 @@ src/
   utils/                   formatting and time helpers
 ```
 
-### The garden scene
+### The garden
 
-The Garden tab opens on a drawn garden rather than a list: a `react-native-skia` canvas
-(`src/features/garden/scene/`) showing every plot as a plant at the stage the store says it is at.
-The sprites and season palettes are ported from the open-source p5.js
-[Garden Project](https://github.com/squigglesdev/Garden-Project) sketch; the economy is not — the
-scene only draws what `growth.ts` computes. A plot grows seed → sprout → sapling → tree over its
-first cycle, then stays a tree and shows each later cycle as fruit ripening, glowing once the
-harvest is ready. Tapping a plant opens it; tapping open ground opens the seed shop.
+The Garden tab is a pager: one tree per page, swipe to the next. Each page is a `react-native-skia`
+stage (`src/features/garden/scene/`) showing the tree at the growth stage its age says and in the
+health its care says, with the sprites and season palettes ported from the open-source p5.js
+[Garden Project](https://github.com/squigglesdev/Garden-Project) sketch. Under it sit the three
+care meters, the tap meter and the actions.
 
-Everything that decides where a plant stands and what it looks like (`layout.ts`, `visual.ts`,
-`shapes.ts`) is pure and tested, and positions derive from the plot id so nothing about the scene
-needs storing. The season follows the calendar month by default; pass `season` to override.
+The loop is a Tamagotchi. A tree has **water**, **sun** and **soil**; each is stored as a level and
+the moment it was set, and decays linearly from there (`care.ts`). Watering is free, the sun meter
+fills when the tree is tapped a hundred times in a day, and soil takes fertiliser. At every local
+midnight `settle` judges the tree: every meter above its line pays that day's **stars**, which
+appear as sparkles on the canopy for the player to tap. A meter at zero for two days puts the tree
+into wilting, five days kills it, and every tree retires after thirty days. A thriving tree also
+grants its run bonus to the daily quest.
 
-The scene draws on iOS and Android only. On web (`npm run web`) it falls back to a caption, because
+Seeds play one of two profiles, both driven by the data in `rules.ts`:
+
+- **Simple** (USDT seeds): fixed lines, fertiliser bought with stars.
+- **Low-carbon** (ALLI seeds): weather conditions the server issues (heatwave, haze, monsoon,
+  drought) move the lines or weaken the sun; practices earned in minigames (mulch, the no-burn
+  pledge, cover crop) counter them; compost is gathered in a minigame and matures overnight, while
+  synthetic fertiliser is instant, costs ALLI and raises the garden's **carbon score**, which
+  multiplies every low-carbon reward down (or up, for a clean farm). Each minigame ends on a lesson.
+
+Only the compost minigame exists so far; a condition whose minigame is not built shows its lesson
+and no button. Stars are the same stars the run quest pays, and the ledger counts them in
+**sparkles**, a hundredth of a star, so a garden day can pay a fraction (migration 003).
+
+Everything that decides what a tree is worth or looks like is pure and tested: `care.ts` for the
+engine, `scene/stage.ts` for geometry and hit-testing, `scene/visual.ts` for the mapping. The
+season follows the calendar month by default; pass `season` to override.
+
+The stage draws on iOS and Android only. On web (`npm run web`) it falls back to a caption, because
 Skia on web needs CanvasKit loaded before first render and that is not wired up yet.
 
 Two conventions worth keeping:
@@ -123,9 +146,9 @@ binary and is public** — no secrets, ever.
 
 ## The economics, in one place
 
-Every tunable number lives in four files: `src/features/run/rewards.ts` (`REWARD_RULES`),
-`src/features/run/shoes.ts` (`SHOES`), `src/features/run/credits.ts` (`RUN_CREDIT_RULES`) and
-`src/features/garden/catalog.ts` (`SEEDS`). The values there are placeholders that make the UI
+Every tunable number lives in five files: `src/features/run/rewards.ts` (`REWARD_RULES`),
+`src/features/run/shoes.ts` (`SHOES`), `src/features/run/credits.ts` (`RUN_CREDIT_RULES`),
+`src/features/garden/catalog.ts` (`SEEDS`) and `src/features/garden/rules.ts` (the care loop). The values there are placeholders that make the UI
 legible — **they are not a balanced economy.** Before launch they belong on the server so they can
 be tuned without an app release. See [docs/architecture.md](docs/architecture.md) §4 for the
 emission model and the sinks that have to absorb it.
