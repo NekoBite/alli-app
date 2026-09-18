@@ -1,6 +1,7 @@
 import { isMock } from '@/config/env';
 import {
   adoptPractice,
+  calendarConditions,
   carbonMultiplier,
   carbonScore,
   claim,
@@ -14,15 +15,8 @@ import {
   type GardenContext,
 } from '@/features/garden/care';
 import { findSeed } from '@/features/garden/catalog';
-import { CONDITIONS, FERTILISERS, MINIGAMES } from '@/features/garden/rules';
-import type {
-  Condition,
-  ConditionId,
-  FertiliserId,
-  Garden,
-  MinigameId,
-  Plot,
-} from '@/features/garden/types';
+import { FERTILISERS, MINIGAMES } from '@/features/garden/rules';
+import type { FertiliserId, Garden, MinigameId, Plot } from '@/features/garden/types';
 import { delay, request } from './client';
 import { mockQuests } from './mockQuests';
 import { mockStars } from './mockStars';
@@ -71,21 +65,6 @@ const live: GardenApi = {
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
 
-/**
- * The server issues conditions from the calendar with some randomness. The
- * mock issues every condition whose month list contains this month, for the
- * whole month, so the low-carbon loop can be seen without waiting for weather.
- */
-function seasonalConditions(now: number): Condition[] {
-  const date = new Date(now);
-  const month = date.getMonth();
-  const from = new Date(date.getFullYear(), month, 1).getTime();
-  const to = new Date(date.getFullYear(), month + 1, 1).getTime();
-  return (Object.keys(CONDITIONS) as ConditionId[])
-    .filter((id) => CONDITIONS[id].months.includes(month))
-    .map((id) => ({ id, from, to }));
-}
-
 function seedGarden(now: number): Garden {
   const mangrove = findSeed('seed-mangrove-premium')!;
   const acacia = findSeed('seed-acacia')!;
@@ -114,7 +93,7 @@ function seedGarden(now: number): Garden {
     compostReady: 1,
   };
 
-  return { plots: [standard, premium], conditions: seasonalConditions(now), carbonAdjustment: 0 };
+  return { plots: [standard, premium], conditions: calendarConditions(now), carbonAdjustment: 0 };
 }
 
 let mockGarden: Garden = seedGarden(Date.now());

@@ -1,5 +1,6 @@
 import { pool, transaction, type Db } from '../db/pool.ts';
 import { ApiError } from '../lib/errors.ts';
+import { recordContribution } from '../quests/service.ts';
 import {
   calculateReward,
   creditStepSamples,
@@ -52,7 +53,7 @@ export type Profile = {
  * they convert on the way out; the writes below convert on the way in. Every
  * number outside this module is in stars.
  */
-async function starsBalance(db: Db | typeof pool, userId: string): Promise<number> {
+export async function starsBalance(db: Db | typeof pool, userId: string): Promise<number> {
   const { rows } = await db.query<{ balance: string | null }>(
     'SELECT sum(delta)::bigint AS balance FROM star_ledger WHERE user_id = $1',
     [userId],
@@ -276,6 +277,11 @@ export async function submitRun(userId: string, input: SubmitRunInput): Promise<
       ],
     );
     const run = inserted[0]!;
+
+    // Credited steps count towards a community step quest.
+    if (reward.eligibleSteps > 0) {
+      await recordContribution(db, userId, 'steps', reward.eligibleSteps, Date.now());
+    }
 
     // A run that did not complete the quest still gets a run row — its steps
     // are what the day accumulates — but no ledger entry, because no star moved.

@@ -18,6 +18,16 @@ This is a **scaffold**: navigation, state, types, reward math and the service bo
 and tested. Everything that needs a backend, a deployed token or a card issuer runs against
 in-memory mocks behind a typed interface, marked with `TODO`. Nothing here moves real money.
 
+## Sign in
+
+The app opens on a sign-in screen. Two roads to one session: a six-digit code by email, or a
+provider's consent screen for Google, Facebook or X. Both are authorization-code flows with PKCE
+(`src/features/auth/oauth.ts`): the phone only ever holds the code, and the server, which holds
+the client secret, exchanges it and asks the provider who signed in. No provider token touches the
+device. The session token lives in the keychain (`src/features/auth/store.ts`) and the root layout
+gates every other route on it. A provider whose client id is not set in `.env` shows a greyed-out
+button; in mock mode every road signs in without a backend and any six digits are a valid code.
+
 ## Run it
 
 ```bash
@@ -65,6 +75,7 @@ app/                       expo-router routes (the file tree IS the navigation)
   garden/shop, plot/[id]   seed shop and per-tree detail
   garden/minigame/[game]   the low-carbon minigames
   quests/weekly            the community's weekly quest
+  sign-in                  email code or Google / Facebook / X
   market/product/[id], cart, checkout
   wallet/send|receive|card
 src/
@@ -74,6 +85,7 @@ src/
   features/
     run/                   geo filtering, step credit, quest rules, shoe tiers,
                            credits, goals, draft, live-session hook, store
+    auth/                  session store and the provider sign-in hook
     garden/                seed catalogue, care rules (data), care engine, store
       scene/               one tree on its stage (react-native-skia)
       ui/                  the tree page: meters, tap meter, actions

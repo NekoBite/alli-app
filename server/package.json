@@ -8,7 +8,7 @@
     "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --import tsx test/*.test.ts",
+    "test": "node --test --test-concurrency=1 --import tsx test/*.test.ts",
     "migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {

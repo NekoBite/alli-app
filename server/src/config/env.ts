@@ -24,6 +24,18 @@ const Schema = z.object({
   SMTP_URL: z.string().optional(),
   MAIL_FROM: z.string().default('Alli <no-reply@trilumi.xyz>'),
 
+  /**
+   * OAuth sign-in. A provider with no credentials answers 503 for that
+   * provider only; the email code keeps working. The client id must be the
+   * same one the app was built with, since the code is bound to it.
+   */
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  FACEBOOK_APP_ID: z.string().optional(),
+  FACEBOOK_APP_SECRET: z.string().optional(),
+  X_CLIENT_ID: z.string().optional(),
+  X_CLIENT_SECRET: z.string().optional(),
+
   /** Redemption stays refused until all three are set. See chain/relayer.ts. */
   BSC_RPC_URL: z.string().url().optional(),
   ALLI_TOKEN_ADDRESS: z.string().optional(),

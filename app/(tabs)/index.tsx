@@ -13,6 +13,7 @@ import {
   StatTile,
   Text,
 } from '@/components';
+import { useAuthStore } from '@/features/auth/store';
 import { useGardenStore } from '@/features/garden/store';
 import { useQuestStore } from '@/features/quests/store';
 import { WeeklyQuestCard } from '@/features/quests/ui';
@@ -29,6 +30,8 @@ export default function HomeScreen() {
   const garden = useGardenStore();
   const wallet = useWalletStore();
   const quest = useQuestStore();
+  const authUser = useAuthStore((state) => state.user);
+  const signOut = useAuthStore((state) => state.signOut);
 
   useEffect(() => {
     void run.refresh();
@@ -191,11 +194,18 @@ export default function HomeScreen() {
           <Row label="No card yet" value="Apply" valueColor={colors.gold} />
         )}
       </Card>
+      <View style={styles.account}>
+        <Text variant="caption" color={colors.ink3} center>
+          Signed in as {authUser?.displayName ?? authUser?.email ?? 'this device'}
+        </Text>
+        <Button label="Sign out" variant="ghost" onPress={() => void signOut()} />
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  account: { marginTop: spacing.xl, gap: spacing.xs, alignItems: 'center' },
   hero: { paddingTop: spacing.xl, paddingBottom: spacing.xl, gap: spacing.xs },
   block: { gap: spacing.md, marginBottom: spacing.xl },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

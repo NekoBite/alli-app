@@ -195,25 +195,30 @@ anything. Get it audited — this contract is the mint.
 Endpoints the client already calls (`src/services/api/`):
 
 ```
+POST /v1/auth/request-code { email }      → 204 either way
+POST /v1/auth/verify-code { email, code } → { token, expiresAt, user }
+POST /v1/auth/oauth { provider, code, codeVerifier, redirectUri } → same; the server exchanges the code
+GET  /v1/auth/me · POST /v1/auth/logout · PUT /v1/auth/wallet { address }
+
 GET  /v1/run/profile?day=YYYY-MM-DD       → stars, stars today, steps today, streak, shoe tier
 GET  /v1/run/runs                         → run history with reward breakdowns
 POST /v1/run/runs                         → submit a run, returns the authoritative reward
 POST /v1/run/stars/exchange { stars, toAddress } → burn stars, return { txHash, alli, starsBalance }
 
+GET  /v1/garden                           → { plots, conditions, carbonAdjustment }, every plot settled to now
+POST /v1/garden/plots                     → plant a seed (the ALLI/USDT charge waits on custody)
+POST /v1/garden/plots/:id/water           → returns the plot
+POST /v1/garden/plots/:id/sun             → one fill a day; the taps are counted on the phone
+POST /v1/garden/plots/:id/fertilise { kind } → charges stars, or spends compost; { plot, starsBalance? }
+POST /v1/garden/plots/:id/claim           → pays the sparkles into star_ledger; { plot, stars, starsBalance }
+POST /v1/garden/plots/:id/minigames/:game → starts compost or grants a practice
+
+GET  /v1/quests/weekly                    → { current: { quest, community, contributors, mine }, last, serverTime }
+
                                           ── not implemented server-side yet ──
 GET  /v1/run/entitlement                  → run credits, membership, serverTime
 POST /v1/run/credits       { runs }       → buy extra credits, returns the entitlement
 POST /v1/run/membership/renew             → extend a month, grant its credits
-
-GET  /v1/garden                           → { plots, conditions }, every plot settled to now
-POST /v1/garden/plots                     → buy + plant a seed
-POST /v1/garden/plots/:id/water           → returns the plot
-POST /v1/garden/plots/:id/sun             → one fill a day; the taps are counted on the phone
-POST /v1/garden/plots/:id/fertilise { kind } → charges stars or ALLI, or spends compost; { plot, starsBalance? }
-POST /v1/garden/plots/:id/claim           → pays the sparkles into star_ledger; { plot, stars, starsBalance }
-POST /v1/garden/plots/:id/minigames/:game → one win a day; starts compost or grants a practice
-
-GET  /v1/quests/weekly                    → { current: { quest, community, contributors, mine }, last, serverTime }
 
 GET  /v1/market/products                  → catalogue (public)
 GET  /v1/market/orders                    → the user's orders
@@ -242,18 +247,27 @@ Two more gaps on the reward side: nothing mints or sells a Silver or Gold shoe (
 and honoured, but every account is Leather), and the garden's run bonus is not applied to the quest
 — `care.ts` computes a multiplier that nothing reads.
 
-The garden endpoints have to run the same `settle` from `src/features/garden/care.ts` before every
-read and write, under the user's row lock, and pay a claim into `star_ledger` with reason
-`garden`. Conditions are the server's to issue (by calendar, with some randomness); the mock issues
-every condition whose month list includes this month. A minigame win and a sun fill are accepted
-once per tree per day and carry no score, so there is nothing in them worth scripting.
+The garden endpoints (`server/src/garden/`) run the same `settle` from
+`src/features/garden/care.ts` before every read and write, under the user's row lock, and pay a
+claim into `star_ledger` with reason `garden`. A plot is stored as the engine's own state object
+(jsonb) plus the columns worth querying; the engine is the schema. Conditions come from the shared
+calendar (`calendarConditions`) on both sides. A sun fill and a minigame win carry no score, so
+there is nothing in them worth scripting. Two things wait on the custody decision: the seed price
+and the ALLI charge for synthetic fertiliser are not collected yet.
 
-The weekly quest is global: one row per week with the quest the editor chose (the client's
-rotation in `src/features/quests/quests.ts` is only the mock's default), a community counter the
-garden and run handlers increment as they go (compost and synthetic uses, minigame wins, sun
-fills, thriving nights at settle, credited steps), and per-user counters for the same. At the
-week's close, one job pays every qualifying user into `star_ledger` with reason `garden` and
-books the carbon delta on their garden. Nothing about the quest is accepted from the phone.
+The weekly quest (`server/src/quests/`) is global. Contributions are rows of (week, user, metric,
+amount) that the garden and run services write as they go: compost and synthetic uses, mulch and
+no-burn wins, sun fills, thriving nights at settle, credited steps. The community total is a sum.
+A finished week is closed lazily on the first read after Monday 00:00 UTC, once, under an advisory
+lock: every player who did their part is paid into `star_ledger` with reason `quest` and the carbon
+delta is booked on their garden. The week's quest comes from the rotation in
+`src/features/quests/quests.ts` until an editor's table replaces it. Nothing about the quest is
+accepted from the phone.
+
+One timezone note: the run quest is bucketed by the runner's local day, which the phone sends. The
+garden's nights are judged at the server's midnight, and the weekly quest closes at UTC Monday.
+For a Thai player that puts the garden's midnight at 07:00 local; a per-user timezone on the
+account is the fix when it matters.
 
 Two notes. Transfer history should come from an indexer (BscScan API, Covalent, or a self-hosted
 one) — never scan blocks from the phone. And order payment is confirmed by the backend watching

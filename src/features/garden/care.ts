@@ -1,5 +1,6 @@
-import { roundStars } from '@/features/run/rewards';
-import { dayKey } from '@/utils/time';
+// Relative on purpose: the server imports this module and has no @/ alias.
+import { roundStars } from '../run/rewards';
+import { dayKey } from '../../utils/time';
 import { findSeed } from './catalog';
 import { CARE_RULES, CONDITIONS, FERTILISERS, PRACTICES, STATUS_ORDER, STATUS_RULES } from './rules';
 import type {
@@ -61,6 +62,21 @@ export function stageFor(age: number): GrowthStage {
 }
 
 // --- conditions and practices ----------------------------------------------
+
+/**
+ * The conditions the calendar issues: every condition whose month list
+ * includes the month of `now`, for that whole month (local time). The server
+ * may add random ones on top; this is the floor both sides agree on.
+ */
+export function calendarConditions(now: number): Condition[] {
+  const date = new Date(now);
+  const month = date.getMonth();
+  const from = new Date(date.getFullYear(), month, 1).getTime();
+  const to = new Date(date.getFullYear(), month + 1, 1).getTime();
+  return (Object.keys(CONDITIONS) as ConditionId[])
+    .filter((id) => CONDITIONS[id].months.includes(month))
+    .map((id) => ({ id, from, to }));
+}
 
 export function conditionsAt(conditions: Condition[], at: number): ConditionId[] {
   return conditions.filter((c) => c.from <= at && at < c.to).map((c) => c.id);

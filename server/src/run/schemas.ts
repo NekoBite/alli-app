@@ -64,6 +64,13 @@ export const VerifyCodeSchema = z.object({
   code: z.string().regex(/^\d{6}$/),
 });
 
+export const OAuthSchema = z.object({
+  provider: z.enum(['google', 'facebook', 'x']),
+  code: z.string().min(1).max(2048),
+  codeVerifier: z.string().min(43).max(128),
+  redirectUri: z.string().min(1).max(512),
+});
+
 export const WalletSchema = z.object({
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
 });

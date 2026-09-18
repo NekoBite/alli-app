@@ -141,6 +141,28 @@ exactly the ones a fake database papers over. CI runs a `postgres:16` service fo
 the same reason. Writing them this way caught a real bug before this shipped: a
 column referenced in the refund query that the schema did not have.
 
+## Sign-in
+
+`POST /v1/auth/request-code` and `/verify-code` are the email road. `POST /v1/auth/oauth` is the
+provider road: the phone sends the authorization code from Google, Facebook or X plus its PKCE
+verifier and redirect URI, and the server exchanges the code with the client secret from the
+environment (`server/src/auth/providers.ts`), asks the provider for the profile, and links or
+creates the account by the provider's user id. A verified email links to an existing account; an
+unverified one never does, since that would be a takeover. X gives no email, so `users.email` is
+nullable (migration 004). A provider with no credentials in the environment answers 503 for that
+provider only.
+
+## Garden and weekly quest
+
+`server/src/garden/` and `server/src/quests/` back the Garden tab and the community quest with
+the same engine the phone previews with, imported through `src/shared/garden.ts`. Every garden
+call locks the user's row, settles every plot to now, then acts; claims and fertiliser charges are
+`star_ledger` rows with reason `garden`, quest payouts with reason `quest`. Finished quest weeks
+are closed on the first read after Monday 00:00 UTC. See docs/architecture.md §6.
+
+The test files run serially (`--test-concurrency=1`): each truncates the shared database, and the
+migrator takes an advisory lock so two processes cannot apply the same file.
+
 ## Not built yet
 
 - **Attestation is a shape, not a defence.** `ATTESTATION=required` checks that a
