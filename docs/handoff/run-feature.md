@@ -50,6 +50,8 @@ pedometer — the combination you want on a device.
 |---|---|
 | `src/features/run/useRunSession.ts` | Owns the live run: permissions, GPS + pedometer, derived stats, autosave |
 | `src/features/run/draft.ts` | The in-progress run on disk, so a closed app does not lose it |
+| `src/features/run/background.ts` | The location task that keeps recording with the screen off |
+| `src/features/run/reconcile.ts` | Merging background fixes and OS step backfill into the session |
 | `src/features/run/credits.ts` | `RUN_CREDIT_RULES` — price, monthly ceiling, whether a run may start |
 | `src/features/run/goals.ts` | The 7-day goal strip, derived from history rather than stored |
 | `src/features/run/store.ts` | Profile (stars, quest, shoe), entitlement, history, purchases, star exchange |
@@ -169,11 +171,14 @@ loop.**
 honoured by the reward math, but there is no mint, no marketplace and no upgrade
 path, so every account earns 1×.
 
-**No background location.** `useRunSession` subscribes in the foreground only.
-iOS suspends the app when the screen locks and the track ends mid-run. The draft
-in `draft.ts` softens it — a killed run can be resumed — but does not fix it.
-Shipping needs `expo-task-manager`; the permissions are already declared in
-`app.json`.
+**Background recording is written but unproven.** `background.ts` registers the
+task, `reconcile.ts` merges what it buffered, and `useRunSession` drains on every
+return to the foreground — but none of it has run on a phone. The device-only
+questions are: does iOS wake the task with the screen locked, does Android's
+foreground service survive Doze, and does the iOS backfill double-count against a
+subscription that resumed? The watcher is restarted after every backfill
+specifically to stop that third one, and that is the line to suspect first if
+step counts come back too high.
 
 **No reconciler.** A crash between the star debit and the on-chain transfer
 leaves a `pending` redemption. `redemptions_pending_idx` exists to find them;
@@ -187,6 +192,11 @@ the job that does not.
 the synthesised GPS and pedometer; `EXPO_PUBLIC_DATA_SOURCE` controls the API. It
 defaults to following the data source, so `mock` still behaves as before, but you
 can set it to `off` and walk around the block with the backend still mocked.
+
+**Two writers, one run.** The foreground watcher writes fixes into React state;
+the background task writes them into AsyncStorage. They overlap around the
+moment the app wakes, which is why `mergeFixes` dedupes by timestamp and why the
+whole run is re-credited from scratch on every drain rather than patched.
 
 **The draft is a whole track in AsyncStorage.** `useRunSession` writes the
 in-progress run every 10 s so it can be resumed. A five-hour track is megabytes
