@@ -81,7 +81,12 @@ export type Plot = {
 /** A weather event the server issues; it moves thresholds while it lasts. */
 export type Condition = { id: ConditionId; from: number; to: number };
 
-export type Garden = { plots: Plot[]; conditions: Condition[] };
+export type Garden = {
+  plots: Plot[];
+  conditions: Condition[];
+  /** Carbon score adjustment earned from community quest rewards (negative is good). */
+  carbonAdjustment: number;
+};
 
 export type Health = 'thriving' | 'stressed' | 'wilting' | 'dead' | 'retired';
 export type GrowthStage = 'seed' | 'sprout' | 'sapling' | 'tree';

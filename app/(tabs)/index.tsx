@@ -14,6 +14,8 @@ import {
   Text,
 } from '@/components';
 import { useGardenStore } from '@/features/garden/store';
+import { useQuestStore } from '@/features/quests/store';
+import { WeeklyQuestCard } from '@/features/quests/ui';
 import { questProgress, REWARD_RULES, starsToAlli, stepsToGo } from '@/features/run/rewards';
 import { shoeFor } from '@/features/run/shoes';
 import { useRunStore } from '@/features/run/store';
@@ -26,11 +28,13 @@ export default function HomeScreen() {
   const run = useRunStore();
   const garden = useGardenStore();
   const wallet = useWalletStore();
+  const quest = useQuestStore();
 
   useEffect(() => {
     void run.refresh();
     void garden.refresh();
     void wallet.load();
+    void quest.refresh();
     // Run once on mount; each store guards its own refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -54,6 +58,7 @@ export default function HomeScreen() {
         void run.refresh();
         void garden.refresh();
         void wallet.refreshBalances();
+        void quest.refresh();
       }}
       refreshing={run.loading}
     >
@@ -120,6 +125,16 @@ export default function HomeScreen() {
           </Text>
         ) : null}
       </Card>
+
+      {quest.snapshot ? (
+        <View style={styles.block}>
+          <WeeklyQuestCard
+            snapshot={quest.snapshot}
+            onOpen={() => router.push('/quests/weekly')}
+            onShare={() => void quest.share()}
+          />
+        </View>
+      ) : null}
 
       <SectionHeader
         title="Garden"
