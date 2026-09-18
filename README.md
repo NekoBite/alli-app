@@ -72,6 +72,7 @@ src/
     run/                   geo filtering, step credit, quest rules, shoe tiers,
                            credits, goals, draft, live-session hook, store
     garden/                seed catalogue, growth math, store
+      scene/               the garden drawn as a scene (react-native-skia)
     market/                product catalogue, cart, orders
     wallet/                balances, transfers, card state
   services/
@@ -80,6 +81,23 @@ src/
     storage/               AsyncStorage (kv) and Keychain/Keystore (secure)
   utils/                   formatting and time helpers
 ```
+
+### The garden scene
+
+The Garden tab opens on a drawn garden rather than a list: a `react-native-skia` canvas
+(`src/features/garden/scene/`) showing every plot as a plant at the stage the store says it is at.
+The sprites and season palettes are ported from the open-source p5.js
+[Garden Project](https://github.com/squigglesdev/Garden-Project) sketch; the economy is not — the
+scene only draws what `growth.ts` computes. A plot grows seed → sprout → sapling → tree over its
+first cycle, then stays a tree and shows each later cycle as fruit ripening, glowing once the
+harvest is ready. Tapping a plant opens it; tapping open ground opens the seed shop.
+
+Everything that decides where a plant stands and what it looks like (`layout.ts`, `visual.ts`,
+`shapes.ts`) is pure and tested, and positions derive from the plot id so nothing about the scene
+needs storing. The season follows the calendar month by default; pass `season` to override.
+
+The scene draws on iOS and Android only. On web (`npm run web`) it falls back to a caption, because
+Skia on web needs CanvasKit loaded before first render and that is not wired up yet.
 
 Two conventions worth keeping:
 

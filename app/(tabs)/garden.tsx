@@ -15,6 +15,7 @@ import {
 } from '@/components';
 import { useGardenStore } from '@/features/garden/store';
 import { remainingYield } from '@/features/garden/growth';
+import { GardenScene } from '@/features/garden/scene';
 import type { PlotView } from '@/features/garden/types';
 import { colors, spacing } from '@/theme';
 import { formatToken } from '@/utils/format';
@@ -52,6 +53,14 @@ export default function GardenScreen() {
         contentContainerStyle={styles.list}
         ListHeaderComponent={
           <View style={styles.header}>
+            <GardenScene
+              plots={plots}
+              onPressPlant={(view) =>
+                router.push({ pathname: '/garden/plot/[id]', params: { id: view.id } })
+              }
+              onPressGround={() => router.push('/garden/shop')}
+            />
+
             <Card style={styles.card}>
               <View style={styles.stats}>
                 <StatTile label="Trees" value={String(plots.length)} />
