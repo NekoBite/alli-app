@@ -32,6 +32,20 @@ export const env = {
    * flag for both made that combination unreachable.
    */
   mockSensors: mockSensors !== 'off',
+  /**
+   * OAuth client ids. Public by nature (they are in every app binary); the
+   * matching secrets live on the server, which is where the authorization
+   * code is exchanged. A blank id disables that provider's button.
+   */
+  oauth: {
+    google: {
+      clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID?.trim() || undefined,
+      /** Google native clients redirect to their reversed client id scheme. */
+      redirectScheme: process.env.EXPO_PUBLIC_GOOGLE_REDIRECT_SCHEME?.trim() || undefined,
+    },
+    facebook: { appId: process.env.EXPO_PUBLIC_FACEBOOK_APP_ID?.trim() || undefined },
+    x: { clientId: process.env.EXPO_PUBLIC_X_CLIENT_ID?.trim() || undefined },
+  },
 } as const;
 
 export const isMock = env.dataSource === 'mock';

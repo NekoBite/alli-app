@@ -1,9 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 
 import { ApiError } from '../lib/errors.ts';
-import { RequestCodeSchema, VerifyCodeSchema, WalletSchema } from '../run/schemas.ts';
+import { OAuthSchema, RequestCodeSchema, VerifyCodeSchema, WalletSchema } from '../run/schemas.ts';
 import { currentUser, requireUser } from './middleware.ts';
-import { requestLoginCode, revokeSession, setWalletAddress, verifyLoginCode } from './service.ts';
+import { providerClient } from './providers.ts';
+import {
+  requestLoginCode,
+  revokeSession,
+  setWalletAddress,
+  signInWithProvider,
+  verifyLoginCode,
+} from './service.ts';
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/auth/request-code', {
@@ -30,6 +37,20 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       const { email, code } = VerifyCodeSchema.parse(request.body);
       const session = await verifyLoginCode(email, code, request.headers['user-agent']);
       return session;
+    },
+  });
+
+  /**
+   * Sign-in with Google, Facebook or X. The phone sends the authorization
+   * code it was handed; the server exchanges it with the client secret and
+   * asks the provider who it was for. No provider token is accepted here.
+   */
+  app.post('/v1/auth/oauth', {
+    config: { rateLimit: { max: 20, timeWindow: '1 hour' } },
+    handler: async (request) => {
+      const input = OAuthSchema.parse(request.body);
+      const profile = await providerClient().exchange(input);
+      return signInWithProvider(profile, request.headers['user-agent']);
     },
   });
 

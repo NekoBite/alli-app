@@ -5,6 +5,8 @@ import { ZodError } from 'zod';
 import { authRoutes } from './auth/routes.ts';
 import { relayerStatus } from './chain/relayer.ts';
 import { env, isProduction } from './config/env.ts';
+import { gardenRoutes } from './garden/routes.ts';
+import { questRoutes } from './quests/routes.ts';
 import { runRoutes } from './run/routes.ts';
 import { ApiError } from './lib/errors.ts';
 
@@ -14,7 +16,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       level: isProduction ? 'info' : 'debug',
       redact: {
         // These are the two values that must never reach a log aggregator.
-        paths: ['req.headers.authorization', 'req.body.code'],
+        paths: ['req.headers.authorization', 'req.body.code', 'req.body.codeVerifier'],
         remove: true,
       },
     },
@@ -75,6 +77,8 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(authRoutes);
   await app.register(runRoutes);
+  await app.register(gardenRoutes);
+  await app.register(questRoutes);
 
   return app;
 }

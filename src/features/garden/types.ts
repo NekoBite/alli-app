@@ -1,5 +1,3 @@
-import type { TokenSymbol } from '@/services/chain';
-
 /** Standard seeds cost ALLI and play the low-carbon loop; premium seeds cost USDT and play the simple one. */
 export type SeedTier = 'standard' | 'premium';
 
@@ -25,7 +23,7 @@ export type Seed = {
   species: string;
   tier: SeedTier;
   /** Currency the seed is bought in: ALLI for standard, USDT for premium. */
-  currency: Extract<TokenSymbol, 'ALLI' | 'USDT'>;
+  currency: 'ALLI' | 'USDT';
   price: number;
   careProfile: CareProfile;
   /** Stars a day above the line pays, before the streak and carbon multipliers. */

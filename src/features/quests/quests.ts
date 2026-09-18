@@ -1,4 +1,5 @@
-import { roundStars } from '@/features/run/rewards';
+// Relative on purpose: the server imports this module and has no @/ alias.
+import { roundStars } from '../run/rewards';
 import { METRIC_LABEL, QUESTS } from './rules';
 import type { QuestOutcome, QuestProgress, QuestRule, WeeklyQuest } from './types';
 

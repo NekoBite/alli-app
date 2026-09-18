@@ -13,7 +13,10 @@ export async function setupDb(): Promise<void> {
   }
   // Truncate rather than re-migrate between tests: faster, and CASCADE keeps
   // the foreign keys honest.
-  await pool.query('TRUNCATE users, auth_codes, sessions, runs, star_ledger, redemptions CASCADE');
+  await pool.query(
+    `TRUNCATE users, auth_codes, sessions, identities, runs, star_ledger, redemptions,
+             plots, gardens, quest_contributions, quest_weeks, quest_payouts CASCADE`,
+  );
 }
 
 export async function createUser(email = `${randomUUID()}@example.com`): Promise<string> {

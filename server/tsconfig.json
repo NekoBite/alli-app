@@ -21,7 +21,7 @@
     "src/**/*.ts",
     "test/**/*.ts",
 
-    // The five modules the server shares with the app, listed one by one
+    // The modules the server shares with the app, listed one by one
     // rather than globbed. The rest of src/features/run (the store, the
     // hook, the jest specs) depends on React, Expo and the @/ alias, and must
     // stay out of the server's compile — the glob that pulled them in is
@@ -30,6 +30,14 @@
     "../src/features/run/geo.ts",
     "../src/features/run/steps.ts",
     "../src/features/run/shoes.ts",
-    "../src/features/run/rewards.ts"
+    "../src/features/run/rewards.ts",
+    "../src/utils/time.ts",
+    "../src/features/garden/types.ts",
+    "../src/features/garden/rules.ts",
+    "../src/features/garden/catalog.ts",
+    "../src/features/garden/care.ts",
+    "../src/features/quests/types.ts",
+    "../src/features/quests/rules.ts",
+    "../src/features/quests/quests.ts"
   ]
 }

@@ -10,7 +10,23 @@ const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../migr
  * Plain numbered .sql files, applied in order, recorded in a table. No DSL to
  * learn and the migration you review is the SQL that runs.
  */
+const MIGRATE_LOCK = 727_272;
+
 export async function migrate(): Promise<string[]> {
+  // Two processes migrating the same database at once (two test files, two
+  // replicas booting) would each try to apply the same file. The advisory
+  // lock makes the second wait and then find nothing left to do.
+  const guard = await pool.connect();
+  await guard.query('SELECT pg_advisory_lock($1)', [MIGRATE_LOCK]);
+  try {
+    return await migrateLocked();
+  } finally {
+    await guard.query('SELECT pg_advisory_unlock($1)', [MIGRATE_LOCK]);
+    guard.release();
+  }
+}
+
+async function migrateLocked(): Promise<string[]> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       name       text PRIMARY KEY,
