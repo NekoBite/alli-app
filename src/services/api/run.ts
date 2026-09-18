@@ -1,11 +1,13 @@
 import { isMock } from '@/config/env';
 import { RUN_CREDIT_RULES, extraRunsCost } from '@/features/run/credits';
-import { calculateReward, roundStars, starsToAlli } from '@/features/run/rewards';
+import { calculateReward, starsToAlli } from '@/features/run/rewards';
 import { DEFAULT_SHOE_TIER, type ShoeTier } from '@/features/run/shoes';
 import { creditStepSamples } from '@/features/run/steps';
 import type { RunEntitlement, RunSession, RunSummary } from '@/features/run/types';
 import { dayKey } from '@/utils/time';
 import { delay, request } from './client';
+import { mockQuests } from './mockQuests';
+import { mockStars } from './mockStars';
 
 /** What the account has earned, as the ledger sees it. */
 export type RunProfile = {
@@ -109,7 +111,7 @@ const live: RunApi = {
 };
 
 let mockProfile: RunProfile = {
-  starsBalance: 3,
+  starsBalance: mockStars.balance(),
   starsEarnedToday: 0,
   stepsToday: 0,
   streakDays: 4,
@@ -134,24 +136,6 @@ let mockEntitlement: RunEntitlement = {
 
 let mockHistory: RunSummary[] = [];
 
-/**
- * The mock's star ledger, shared with the garden mock so a sparkle collected
- * on a tree shows up in the same balance the run tab reads. In production
- * both write to the one `star_ledger` table.
- */
-export const mockStars = {
-  balance: () => mockProfile.starsBalance,
-  credit(stars: number): number {
-    mockProfile = { ...mockProfile, starsBalance: roundStars(mockProfile.starsBalance + stars) };
-    return mockProfile.starsBalance;
-  },
-  debit(stars: number): number {
-    if (stars > mockProfile.starsBalance) throw new Error('You do not have that many stars.');
-    mockProfile = { ...mockProfile, starsBalance: roundStars(mockProfile.starsBalance - stars) };
-    return mockProfile.starsBalance;
-  },
-};
-
 /** The entitlement as the server would report it now, with a fresh clock. */
 function readEntitlement(): RunEntitlement {
   const now = Date.now();
@@ -165,7 +149,7 @@ function readEntitlement(): RunEntitlement {
 }
 
 const mock: RunApi = {
-  getProfile: () => delay({ ...mockProfile }),
+  getProfile: () => delay({ ...mockProfile, starsBalance: mockStars.balance() }),
   getEntitlement: () => delay(readEntitlement()),
   getHistory: () => delay([...mockHistory]),
 
@@ -192,9 +176,11 @@ const mock: RunApi = {
       confirmed: true,
     };
     mockHistory = [summary, ...mockHistory];
+    // Credited steps count towards a community step quest.
+    if (reward.eligibleSteps > 0) mockQuests.record('steps', reward.eligibleSteps);
     mockProfile = {
       ...mockProfile,
-      starsBalance: mockProfile.starsBalance + reward.stars,
+      starsBalance: mockStars.credit(reward.stars),
       starsEarnedToday: mockProfile.starsEarnedToday + reward.stars,
       stepsToday: reward.stepsToday,
     };
@@ -212,14 +198,13 @@ const mock: RunApi = {
   async exchangeStars(stars) {
     const count = Math.floor(stars);
     if (count <= 0) throw new Error('Exchange a whole number of stars.');
-    if (count > mockProfile.starsBalance) throw new Error('You do not have that many stars.');
-
-    mockProfile = { ...mockProfile, starsBalance: mockProfile.starsBalance - count };
+    const starsBalance = mockStars.debit(count);
+    mockProfile = { ...mockProfile, starsBalance };
     return delay(
       {
         txHash: `0xmock${Date.now().toString(16).padStart(60, '0')}`,
         alli: starsToAlli(count),
-        starsBalance: mockProfile.starsBalance,
+        starsBalance,
       },
       900,
     );

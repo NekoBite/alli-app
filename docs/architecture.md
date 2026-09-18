@@ -213,6 +213,8 @@ POST /v1/garden/plots/:id/fertilise { kind } → charges stars or ALLI, or spend
 POST /v1/garden/plots/:id/claim           → pays the sparkles into star_ledger; { plot, stars, starsBalance }
 POST /v1/garden/plots/:id/minigames/:game → one win a day; starts compost or grants a practice
 
+GET  /v1/quests/weekly                    → { current: { quest, community, contributors, mine }, last, serverTime }
+
 GET  /v1/market/products                  → catalogue (public)
 GET  /v1/market/orders                    → the user's orders
 POST /v1/market/orders                    → create an order in pending-payment
@@ -245,6 +247,13 @@ read and write, under the user's row lock, and pay a claim into `star_ledger` wi
 `garden`. Conditions are the server's to issue (by calendar, with some randomness); the mock issues
 every condition whose month list includes this month. A minigame win and a sun fill are accepted
 once per tree per day and carry no score, so there is nothing in them worth scripting.
+
+The weekly quest is global: one row per week with the quest the editor chose (the client's
+rotation in `src/features/quests/quests.ts` is only the mock's default), a community counter the
+garden and run handlers increment as they go (compost and synthetic uses, minigame wins, sun
+fills, thriving nights at settle, credited steps), and per-user counters for the same. At the
+week's close, one job pays every qualifying user into `star_ledger` with reason `garden` and
+books the carbon delta on their garden. Nothing about the quest is accepted from the phone.
 
 Two notes. Transfer history should come from an indexer (BscScan API, Covalent, or a self-hosted
 one) — never scan blocks from the phone. And order payment is confirmed by the backend watching

@@ -24,7 +24,8 @@ import type {
   Plot,
 } from '@/features/garden/types';
 import { delay, request } from './client';
-import { mockStars } from './run';
+import { mockQuests } from './mockQuests';
+import { mockStars } from './mockStars';
 
 export type ClaimResult = { plot: Plot; stars: number; starsBalance: number };
 export type FertiliseResult = { plot: Plot; starsBalance?: number };
@@ -113,7 +114,7 @@ function seedGarden(now: number): Garden {
     compostReady: 1,
   };
 
-  return { plots: [standard, premium], conditions: seasonalConditions(now) };
+  return { plots: [standard, premium], conditions: seasonalConditions(now), carbonAdjustment: 0 };
 }
 
 let mockGarden: Garden = seedGarden(Date.now());
@@ -121,19 +122,31 @@ let mockGarden: Garden = seedGarden(Date.now());
 function ctx(): GardenContext {
   return {
     conditions: mockGarden.conditions,
-    carbonMultiplier: carbonMultiplier(carbonScore(mockGarden.plots)),
+    carbonMultiplier: carbonMultiplier(
+      carbonScore(mockGarden.plots, mockQuests.carbonAdjustment()),
+    ),
   };
 }
 
-/** Settles every plot to now, as the server does before answering anything. */
+/**
+ * Settles every plot to now, as the server does before answering anything.
+ * A night that paid is a thriving night, which the community quest may count.
+ */
 function settled(now: number): Garden {
+  let thrivingNights = 0;
   mockGarden = {
     ...mockGarden,
+    carbonAdjustment: mockQuests.carbonAdjustment(),
     plots: mockGarden.plots.map((plot) => {
       const seed = findSeed(plot.seedId);
-      return seed ? settle(plot, seed, ctx(), now) : plot;
+      if (!seed) return plot;
+      const next = settle(plot, seed, ctx(), now);
+      const known = new Set(plot.claimable.map((c) => c.day));
+      thrivingNights += next.claimable.filter((c) => !known.has(c.day)).length;
+      return next;
     }),
   };
+  if (thrivingNights > 0) mockQuests.record('thrivingNights', thrivingNights);
   return mockGarden;
 }
 
@@ -174,7 +187,9 @@ const mock: GardenApi = {
   async fillSun(plotId) {
     const now = Date.now();
     const { plot, seed } = find(plotId, now);
-    return delay(replace(fillSun(plot, seed, mockGarden.conditions, now)), 250);
+    const next = replace(fillSun(plot, seed, mockGarden.conditions, now));
+    mockQuests.record('sunFills');
+    return delay(next, 250);
   },
 
   async fertilise(plotId, kind) {
@@ -186,6 +201,8 @@ const mock: GardenApi = {
     if (rule.priceStars) starsBalance = mockStars.debit(rule.priceStars);
     // TODO: `priceAlli` is charged server-side. The mock does not debit ALLI.
     replace(next);
+    if (kind === 'compost') mockQuests.record('compost');
+    if (kind === 'synthetic') mockQuests.record('synthetic');
     return delay({ plot: next, starsBalance }, 500);
   },
 
@@ -208,7 +225,12 @@ const mock: GardenApi = {
     const grants = MINIGAMES[game].grants;
     let next = plot;
     if (grants.compost) next = startCompost(next, seed, now);
-    if (grants.practice) next = adoptPractice(next, seed, grants.practice);
+    if (grants.practice) {
+      const fresh = !plot.practices.includes(grants.practice);
+      next = adoptPractice(next, seed, grants.practice);
+      if (fresh && grants.practice === 'mulch') mockQuests.record('mulch');
+      if (fresh && grants.practice === 'noBurn') mockQuests.record('noBurn');
+    }
     return delay(replace(next), 400);
   },
 };

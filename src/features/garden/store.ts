@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { useQuestStore } from '@/features/quests/store';
 import { useRunStore } from '@/features/run/store';
 import { gardenApi } from '@/services/api';
 import { kv, KEYS } from '@/services/storage/kv';
@@ -40,12 +41,12 @@ type GardenState = {
   multiplier: (now?: number) => number;
 };
 
-const EMPTY: Garden = { plots: [], conditions: [] };
+const EMPTY: Garden = { plots: [], conditions: [], carbonAdjustment: 0 };
 
 function context(garden: Garden): GardenContext {
   return {
     conditions: garden.conditions,
-    carbonMultiplier: carbonMultiplier(carbonScore(garden.plots)),
+    carbonMultiplier: carbonMultiplier(carbonScore(garden.plots, garden.carbonAdjustment)),
   };
 }
 
@@ -142,7 +143,8 @@ export const useGardenStore = create<GardenState>((set, get) => ({
   },
 
   carbon() {
-    const score = carbonScore(get().garden.plots);
+    const { garden } = get();
+    const score = carbonScore(garden.plots, garden.carbonAdjustment);
     return { score, multiplier: carbonMultiplier(score) };
   },
 
@@ -164,6 +166,8 @@ async function act(plotId: string, run: () => Promise<Plot>): Promise<void> {
         plots: state.garden.plots.map((p) => (p.id === plot.id ? plot : p)),
       },
     }));
+    // The action may have counted towards the community quest.
+    void useQuestStore.getState().refresh();
   } catch (error) {
     setState({ busy: undefined, error: (error as Error).message });
     throw error;

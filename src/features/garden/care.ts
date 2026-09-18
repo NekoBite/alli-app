@@ -175,9 +175,12 @@ export function rewardFor(seed: Seed, streakDays: number, carbonMultiplier: numb
   return roundStars(seed.starsPerDay * (1 + streakBonus) * carbon);
 }
 
-/** The garden's carbon score: synthetic fertiliser adds, compost and practices subtract. */
-export function carbonScore(plots: Plot[]): number {
-  let score = 0;
+/**
+ * The garden's carbon score: synthetic fertiliser adds, compost and practices
+ * subtract, and `adjustment` carries what community quest rewards have earned.
+ */
+export function carbonScore(plots: Plot[], adjustment = 0): number {
+  let score = adjustment;
   for (const plot of plots) {
     const seed = findSeed(plot.seedId);
     if (!seed || seed.careProfile !== 'lowCarbon') continue;

@@ -64,6 +64,7 @@ app/                       expo-router routes (the file tree IS the navigation)
   run/credits|stars        buy run credits, renew membership, exchange stars
   garden/shop, plot/[id]   seed shop and per-tree detail
   garden/minigame/[game]   the low-carbon minigames
+  quests/weekly            the community's weekly quest
   market/product/[id], cart, checkout
   wallet/send|receive|card
 src/
@@ -77,6 +78,7 @@ src/
       scene/               one tree on its stage (react-native-skia)
       ui/                  the tree page: meters, tap meter, actions
       minigames/           shell + the games that earn compost and practices
+    quests/                the global weekly quest: catalogue, week maths, store, card
     market/                product catalogue, cart, orders
     wallet/                balances, transfers, card state
   services/
@@ -118,6 +120,18 @@ drought) and **Haze control** (tap embers out and drag residue piles into the ba
 burning season). A win grants what the game teaches; nothing else about the round is sent. Stars
 are the same stars the run quest pays, and the ledger counts them in **sparkles**, a hundredth of a
 star, so a garden day can pay a fraction (migration 003).
+
+### The weekly quest
+
+One quest a week, for the whole community, not per player: a goal the community reaches
+together (compost uses, thriving nights, sun meters filled, GPS-verified steps, pledges in the
+burning season) or a cap it stays under (synthetic fertiliser). Everyone's contributions are counted
+by the server from the actions it already handles, so there is nothing to submit; when the week
+closes, Monday 00:00 UTC, every player who did their part is paid the reward in stars, and some
+quests also lower the garden's carbon score. A stretch goal pays double, which is what gives the
+community something to argue about, and the card's **Share progress** button posts where the
+community stands so the week's plan can be made wherever they talk. The catalogue, the week maths
+and the reward rules are pure and tested (`src/features/quests/`); the rotation is season-aware.
 
 Everything that decides what a tree is worth or looks like is pure and tested: `care.ts` for the
 engine, `scene/stage.ts` for geometry and hit-testing, `scene/visual.ts` for the mapping. The

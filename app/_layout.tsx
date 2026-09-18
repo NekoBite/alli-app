@@ -37,6 +37,7 @@ export default function RootLayout() {
           name="garden/minigame/[game]"
           options={{ title: 'Minigame', presentation: 'modal' }}
         />
+        <Stack.Screen name="quests/weekly" options={{ title: 'Weekly quest' }} />
         <Stack.Screen name="market/product/[id]" options={{ title: 'Product' }} />
         <Stack.Screen name="market/cart" options={{ title: 'Cart' }} />
         <Stack.Screen name="market/checkout" options={{ title: 'Checkout' }} />

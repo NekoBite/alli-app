@@ -10,6 +10,8 @@ import {
 
 import { Button, Card, Pill, Screen, Text } from '@/components';
 import { useGardenStore } from '@/features/garden/store';
+import { useQuestStore } from '@/features/quests/store';
+import { WeeklyQuestStrip } from '@/features/quests/ui';
 import type { PlotView } from '@/features/garden/types';
 import { TreePage } from '@/features/garden/ui';
 import { colors, spacing } from '@/theme';
@@ -32,12 +34,15 @@ export default function GardenScreen() {
   const { width } = useWindowDimensions();
   const { refresh, views, carbon, error } = useGardenStore();
   const garden = useGardenStore((state) => state.garden);
+  const quest = useQuestStore((state) => state.snapshot);
+  const refreshQuest = useQuestStore((state) => state.refresh);
   const [tick, setTick] = useState(0);
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    void refreshQuest();
+  }, [refresh, refreshQuest]);
 
   // Re-project once a minute so the meters are seen to fall.
   useEffect(() => {
@@ -97,6 +102,7 @@ export default function GardenScreen() {
           {error}
         </Text>
       ) : null}
+      {quest ? <WeeklyQuestStrip snapshot={quest} onOpen={() => router.push('/quests/weekly')} /> : null}
 
       <FlatList
         data={pages}
