@@ -1,6 +1,6 @@
 # Handoff — ALLI RUN (steps → the daily quest → stars → ALLI)
 
-_Verified 2026-09-18 on `main` @ `a375a9a`._
+_Verified 2026-09-19 on `main` @ `5b90797`._
 
 ## Orientation
 
@@ -68,6 +68,9 @@ pedometer — the combination you want on a device.
 | `server/src/run/service.ts` | The trust boundary. Recompute, re-credit steps, quest, star ledger, exchange |
 | `server/migrations/001_init.sql` | Schema, with the reasoning in comments |
 | `server/migrations/002_stars.sql` | Points ledger → star ledger, plus `users.shoe_tier` |
+| `server/migrations/003_sparkles.sql` | Star ledger → sparkle ledger, ×100. See the invariant below |
+| `server/migrations/004_identities.sql` | OAuth identities, for the sign-in providers |
+| `server/migrations/005_garden.sql` | Garden tables — the plant game, not this feature |
 
 ## Invariants
 
@@ -103,6 +106,32 @@ ledger never charged for if the process dies in between.
 
 **Stars are `SUM(delta)` over an append-only ledger, not a column.** Slower to
 read, possible to audit. Every credit and debit is a row.
+
+**The ledger counts sparkles, not stars — a hundred to one.** Migration
+`003_sparkles.sql` renamed the column and multiplied every stored value by 100,
+because the garden pays a fraction of a star a day and the ledger needs whole
+numbers. `REWARD_RULES.sparklesPerStar` is the only place that ratio is written
+down; `toSparkles`, `fromSparkles` and `roundStars` in `rewards.ts` are how you
+cross the boundary. People see stars everywhere; sparkles exist only where a
+whole number is stored. A raw ledger figure that looks 100× too large is not a
+bug.
+
+## Adjacent systems
+
+Two things landed next to this feature after the first draft of this document,
+and a session touching the run loop will meet both.
+
+**The weekly quest** (`src/features/quests/`, `GET /v1/quests/weekly`) is a
+global, community-wide goal sitting alongside the daily one. Separate rules,
+separate store, separate card on the run screen. It reads run history but does
+not change how a run is scored, so the invariants below are unaffected.
+
+**Sign-in is built.** `app/sign-in.tsx` offers email one-time codes plus Google,
+Facebook and X; `src/features/auth/` holds the store and OAuth glue; the server
+answers `/v1/auth/{request-code,verify-code,oauth,me,logout,wallet}` and
+`app/_layout.tsx` gates every signed-in route until the stored session is read.
+Earlier drafts of this document called its absence the blocker on end-to-end
+testing against the real backend; that is no longer true.
 
 ## Decisions already made
 
@@ -188,10 +217,6 @@ every backfill specifically to prevent the third — suspect that line first if
 counts come back high. To test: walk with the phone pocketed and compare **steps
 counted** on the summary against Apple Health or Google Fit for the same window.
 
-**No sign-in screen.** The server has working auth; the app has no UI for it,
-which is why `EXPO_PUBLIC_DATA_SOURCE=live` yields 401s. **This blocks all
-end-to-end testing against the real backend.**
-
 **Run credits and membership exist only client-side.** `GET /v1/run/entitlement`,
 `POST /v1/run/credits` and `POST /v1/run/membership/renew` are defined and mocked
 in `src/services/api/run.ts`; the server answers none of them. No credit ledger,
@@ -262,21 +287,28 @@ React, Expo and the `@/` alias, and the server compile fails. Add a file to
 unique-index behaviour is exactly what a fake database papers over.
 `DATABASE_URL=postgres://… npm test --workspace server`.
 
+**A sparkle is a hundredth of a star.** Every column with `sparkles` in its
+name holds the ×100 figure, and every number a person reads is stars. Convert at
+the boundary with `toSparkles`/`fromSparkles` rather than writing `* 100`
+anywhere new — the ratio lives in `REWARD_RULES.sparklesPerStar` so it can move.
+
 **Day buckets are the runner's local day, not UTC**, so the quest resets at their
 midnight. The client sends `day`; it is not derived server-side.
 
 ## Verified state
 
-Run on `main` @ `a375a9a` on 2026-09-18:
+Run on `main` @ `5b90797` on 2026-09-19:
 
 | Check | Result |
 |---|---|
 | `npm run lint` | clean |
 | `npm run typecheck` | clean |
-| `npm test` | 80 passed |
+| `npm test` | 125 passed, 12 suites |
 | `npm run typecheck --workspace server` | clean |
-| `npm test --workspace server` | 21 passed, 0 failed, 0 skipped |
-| App, driven in a browser | 45 s of mock run → 3,043 steps, 2.52 km, quest 51%, no console errors |
+| `npm test --workspace server` | 39 passed, 0 failed, 0 skipped |
+
+The browser-driven mock run recorded in the previous revision was not repeated
+for this check, so treat those figures as of 2026-09-18 rather than current.
 
 CI runs all of these plus Android and iOS bundles on every PR, and the five
 checks are required by branch protection on `main`.
@@ -297,3 +329,7 @@ The alternative first move is device verification of background recording, and
 it is worth saying why it is *not* the recommendation for a fresh session: it
 needs a human with a phone to walk for twenty minutes. Ask for that walk in
 parallel, then build against what it reports.
+
+After those two, the largest remaining hole in the loop is run credits and
+membership on the server — the client calls three endpoints that nothing
+answers. That is listed under **Deliberately not built** and has not moved.
