@@ -8,13 +8,16 @@
 // Same principle as the Playwright version: it reads the page you already have
 // open under your own session. It never sees a credential.
 //
-// The Members list paginates (20 per page, "Showing 1-20 of N members"), so
-// this clicks through every page and accumulates rows, deduplicating by email.
-// It waits for the first row to actually change before reading the next page,
-// rather than guessing a fixed delay.
+// The Members list paginates (20 rows a page, "Showing 1-20 of N members",
+// "Page X of Y"), so this clicks through every page and accumulates rows.
+//
+// Page turns are tracked by reading the "Page X of Y" indicator, not by
+// watching the first row change. The row-change check could not tell one
+// advance from two, and a real run lost a whole page of 20 members that way
+// while reporting success. Reading the counter means a skipped page is both
+// impossible to miss and reported by number.
 
 (async () => {
-  const CAP = 200; // safety stop, well above the ~53 pages the list has today
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // The members list is the biggest table on the page; nav and summary tables
@@ -31,14 +34,24 @@
       [...r.querySelectorAll('td')].map((c) => c.innerText.trim()),
     );
 
-  const findNext = () =>
+  const pageNo = () => {
+    const m = document.body.innerText.match(/Page\s+(\d+)\s+of\s+(\d+)/i);
+    return m ? [Number(m[1]), Number(m[2])] : null;
+  };
+
+  const claimedTotal = () => {
+    const m = document.body.innerText.match(/of\s+([\d,]+)\s+members/i);
+    return m ? Number(m[1].replace(/,/g, '')) : null;
+  };
+
+  const nextBtn = () =>
     [...document.querySelectorAll('button, a')].find((el) => {
       const label = `${el.innerText || ''} ${el.getAttribute('aria-label') || ''}`;
       if (!/next/i.test(label)) return false;
       return !el.disabled && el.getAttribute('aria-disabled') !== 'true';
     });
 
-  let table = getTable();
+  const table = getTable();
   if (!table) {
     console.error('No table found — make sure the Members tab is open.');
     return;
@@ -50,46 +63,63 @@
 
   const seen = new Set();
   const all = [];
+  const skipped = [];
+  let [current, total] = pageNo() ?? [1, 1];
 
-  for (let page = 1; page <= CAP; page += 1) {
-    table = getTable();
+  for (;;) {
     let added = 0;
-    for (const row of rowsOf(table)) {
+    for (const row of rowsOf(getTable())) {
       const key = (row[0] || '').toLowerCase();
       if (!key || seen.has(key)) continue;
       seen.add(key);
       all.push(row);
       added += 1;
     }
-    console.log(`page ${page}: +${added} (total ${all.length})`);
+    console.log(`page ${current}/${total}: +${added} (total ${all.length})`);
 
-    const next = findNext();
-    if (!next) {
-      console.log('No enabled "next" control — last page reached.');
+    if (current >= total) break;
+
+    const want = current + 1;
+    const btn = nextBtn();
+    if (!btn) {
+      console.warn(`No enabled "next" control on page ${current} of ${total}.`);
       break;
     }
+    btn.click();
 
-    // Wait for the table to actually turn over. A fixed delay either wastes
-    // time or reads the old page on a slow request.
-    const before = (rowsOf(table)[0] || [])[0] || '';
-    next.click();
     let advanced = false;
-    for (let i = 0; i < 50; i += 1) {
+    for (let i = 0; i < 60; i += 1) {
       await sleep(200);
-      const now = (rowsOf(getTable())[0] || [])[0] || '';
-      if (now && now !== before) {
+      const p = pageNo();
+      if (!p) continue;
+      if (p[0] === want) {
+        [current, total] = p;
+        advanced = true;
+        break;
+      }
+      // Jumped past the page we wanted — record exactly which rows were lost
+      // rather than quietly returning a short export.
+      if (p[0] > want) {
+        for (let n = want; n < p[0]; n += 1) skipped.push(n);
+        [current, total] = p;
         advanced = true;
         break;
       }
     }
     if (!advanced) {
-      console.warn('Page did not advance within 10s — stopping here.');
+      console.warn(`Stuck leaving page ${current} — stopping.`);
       break;
     }
   }
 
   window.__csv = [header, ...all.map((r) => r.map(esc).join(','))].join('\n') + '\n';
-  console.log(`DONE — ${all.length} members captured.`);
+
+  const claimed = claimedTotal();
+  console.log(`DONE — ${all.length}${claimed ? ` of ${claimed}` : ''} members captured.`);
+  if (skipped.length) console.warn(`SKIPPED PAGES: ${skipped.join(', ')}`);
+  if (claimed && all.length < claimed) {
+    console.warn(`SHORT BY ${claimed - all.length} — do not treat this export as complete.`);
+  }
 
   const blob = new Blob([window.__csv], { type: 'text/csv' });
   const link = document.createElement('a');
