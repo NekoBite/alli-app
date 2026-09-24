@@ -1,5 +1,8 @@
-# Exported member data is real PII — never commit it.
+# Exported / derived member data is real PII — never commit it.
 members.csv
 members-*.csv
 members-page.png
+members.normalized.json
+members.seed.sql
+*.seed.sql
 node_modules/
