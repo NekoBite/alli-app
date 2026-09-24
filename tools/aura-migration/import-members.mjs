@@ -48,9 +48,12 @@ for (const [i, raw] of rows.entries()) {
   const tier = TIER_MAP[(raw.tier ?? '').trim().toLowerCase()];
   if (!tier) problems.push({ line, email, issue: `unrecognised tier "${raw.tier}" (defaulted to leather)` });
 
-  const created_at = toIsoDate(raw.registered_at);
-  if (raw.registered_at && !created_at) {
-    problems.push({ line, email, issue: `unparseable date "${raw.registered_at}"` });
+  // The Playwright exporter emits `registered_at`; the console exporter keeps
+  // the panel's own "Registered" header. Accept either.
+  const registered = raw.registered_at || raw.registered;
+  const created_at = toIsoDate(registered);
+  if (registered && !created_at) {
+    problems.push({ line, email, issue: `unparseable date "${registered}"` });
   }
 
   const active = (raw.status ?? '').trim().toLowerCase() === 'active' || !raw.status;
