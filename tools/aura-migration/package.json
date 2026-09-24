@@ -1,0 +1,13 @@
+{
+  "name": "aura-migration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Operator-run tools to export AURA RUN member data for import into ALLI.",
+  "scripts": {
+    "export": "node export-members.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}
