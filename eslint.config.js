@@ -19,6 +19,10 @@ module.exports = [
       // Server build output.
       'server/dist/',
       'expo-env.d.ts',
+      // Standalone operator-run migration tooling: its own package.json and
+      // deps, a CLI where console output is the point — not part of the app or
+      // server build, so the app's lint rules do not apply.
+      'tools/',
     ],
   },
 
