@@ -1,0 +1,5 @@
+# Exported member data is real PII — never commit it.
+members.csv
+members-*.csv
+members-page.png
+node_modules/
