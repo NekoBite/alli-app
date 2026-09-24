@@ -34,13 +34,18 @@ const baseUrl = args.url ?? 'https://admin-aurarun.lnw.dev/';
 const outPath = args.out ?? './members.csv';
 const maxPages = Number(args['max-pages'] ?? 500);
 
-// Header-matching heuristics. The panel's real column labels are unknown from
-// here, so we match on a set of likely names (English + Thai) and let the
-// operator override with --email/--tier/--date once they see the debug output.
+// Header-matching heuristics, tuned to the live Members table:
+//   Email | Tier | Status | Registered | ALLI | USDT
+// Each entry is a list of likely header labels (the operator can override the
+// three key ones with --email/--tier/--date). Status/ALLI/USDT are captured
+// too since they matter for the migration (active state, wallet balances).
 const HEURISTICS = {
   email: [args.email, 'email', 'e-mail', 'อีเมล'].filter(Boolean),
   tier: [args.tier, 'tier', 'level', 'shoe', 'rank', 'ระดับ'].filter(Boolean),
+  status: ['status', 'state', 'สถานะ'],
   date: [args.date, 'registered', 'register', 'joined', 'created', 'signup', 'sign up', 'วันที่สมัคร', 'สมัคร'].filter(Boolean),
+  alli: ['alli', 'alli balance'],
+  usdt: ['usdt', 'usdt balance'],
 };
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -95,6 +100,8 @@ let pageNum = 0;
 
 while (pageNum < maxPages) {
   pageNum += 1;
+  // Lazy lists load rows as you scroll; make sure they are all in the DOM.
+  await loadAllRows(page, table);
   const pageRows = await readRows(table, cols);
   let added = 0;
   for (const r of pageRows) {
@@ -156,22 +163,39 @@ async function locateTable(page, override) {
 
 function resolveColumns(headers) {
   const norm = headers.map((h) => h.trim().toLowerCase());
-  const find = (names) =>
-    norm.findIndex((h) => names.some((name) => h.includes(String(name).toLowerCase())));
-  return { email: find(HEURISTICS.email), tier: find(HEURISTICS.tier), date: find(HEURISTICS.date) };
+  // Exact header match first (so "ALLI" doesn't match inside another word), then
+  // fall back to substring.
+  const find = (names) => {
+    const wanted = names.map((n) => String(n).toLowerCase());
+    const exact = norm.findIndex((h) => wanted.includes(h));
+    if (exact >= 0) return exact;
+    return norm.findIndex((h) => wanted.some((name) => h.includes(name)));
+  };
+  return {
+    email: find(HEURISTICS.email),
+    tier: find(HEURISTICS.tier),
+    status: find(HEURISTICS.status),
+    date: find(HEURISTICS.date),
+    alli: find(HEURISTICS.alli),
+    usdt: find(HEURISTICS.usdt),
+  };
 }
 
 async function readRows(table, cols) {
   const trs = table.locator('tbody tr');
   const count = await trs.count();
   const out = [];
+  const at = (cells, i) => (i >= 0 ? (cells[i] ?? '').trim() : '');
   for (let i = 0; i < count; i += 1) {
     const cells = await trs.nth(i).locator('td').allInnerTexts();
     if (!cells.length) continue;
     out.push({
-      email: (cells[cols.email] ?? '').trim(),
-      tier: cols.tier >= 0 ? (cells[cols.tier] ?? '').trim() : '',
-      registered_at: cols.date >= 0 ? (cells[cols.date] ?? '').trim() : '',
+      email: at(cells, cols.email),
+      tier: at(cells, cols.tier),
+      status: at(cells, cols.status),
+      registered_at: at(cells, cols.date),
+      alli: at(cells, cols.alli),
+      usdt: at(cells, cols.usdt),
     });
   }
   return out;
@@ -213,7 +237,34 @@ async function goNext(page, override) {
 
 function toCsv(rows) {
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const head = 'email,tier,registered_at';
-  const body = rows.map((r) => [r.email, r.tier, r.registered_at].map(esc).join(','));
+  const head = 'email,tier,status,registered_at,alli,usdt';
+  const body = rows.map((r) =>
+    [r.email, r.tier, r.status, r.registered_at, r.alli, r.usdt].map(esc).join(','),
+  );
   return [head, ...body].join('\n') + '\n';
+}
+
+// The Members list appears to lazy-load on scroll rather than paginate. Scroll
+// the window (and, if present, the scrollable table container) to the bottom
+// until the row count stops growing, so every row is in the DOM before reading.
+async function loadAllRows(page, table) {
+  const rowCount = () => table.locator('tbody tr').count();
+  let previous = -1;
+  let stableFor = 0;
+  for (let i = 0; i < 400; i += 1) {
+    const current = await rowCount();
+    if (current === previous) {
+      stableFor += 1;
+      if (stableFor >= 3) break; // count held steady across a few scrolls → done
+    } else {
+      stableFor = 0;
+      previous = current;
+    }
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await table.evaluate((el) => {
+      const scroller = el.closest('[style*="overflow"], .overflow-auto, .overflow-y-auto') ?? el;
+      scroller.scrollTop = scroller.scrollHeight;
+    }).catch(() => {});
+    await page.waitForTimeout(400);
+  }
 }
