@@ -5,4 +5,6 @@ export { gardenApi, type GardenApi } from './garden';
 export { marketApi, type CreateOrderInput, type MarketApi } from './market';
 export { questApi, type QuestApi } from './quests';
 export { runApi, type RunApi, type RunProfile, type StarExchangeResult } from './run';
-export { walletApi, type WalletApi } from './wallet';
+export { walletApi, type TokenPrices, type WalletApi } from './wallet';
+export { referralApi, type ReferralApi } from './referrals';
+export { payIntent, paymentsApi, type IntentRequest, type IntentStatus, type PaymentsApi } from './payments';

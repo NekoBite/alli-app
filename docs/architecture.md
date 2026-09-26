@@ -292,3 +292,20 @@ the chain, never by the client reporting success.
 
 Steps 1–6 are the minimum for a run app that pays real ALLI. The garden, marketplace and card
 each add a full compliance surface on top.
+
+## 8. Wireframe vs rules
+
+The screens follow `design/wireframes/` (v0.1, Sep 2026) for layout, copy and flow. The wireframe's
+sample numbers are illustrations, and where they disagree with the rules already in code the
+screens read the code's numbers. These are open product decisions, not bugs:
+
+| Topic | Wireframe | Code (what the app shows) | Where |
+|---|---|---|---|
+| Shoe tiers | Leather ×1.0 · Bronze ×1.5 · Silver ×2.5 · Gold ×5.0 ("Tier 1 of 4") | Leather ×1 · Silver ×3 · Gold ×5 | `src/features/run/shoes.ts`, `server/migrations/002_stars.sql` CHECK, `AlliShoes.sol` tiers |
+| Star exchange rate | 100 ★ = 1 ALLI, minimum 100 ★ | 1 ★ = 1,000 ALLI, any whole star | `REWARD_RULES.alliPerStar` |
+| Quest reward | "+48 ★" for a run | 1 ★ × shoe multiplier, once a day | `REWARD_RULES.starsPerQuest` |
+| Run packs | 5 / 10 / 30 runs for 50 / 90 / 240 ALLI; renew 250 ALLI | Same packs added as placeholders (`RUN_PACKS`); USDT price stays 25 USDT / 30 runs | `src/features/run/credits.ts` — the payment intent is the binding price |
+| Weekly quest tiers | 25 / 50 / 75 / 100 % of the goal, each claimable | Goal + stretch goal, paid at week close | `src/features/quests/rules.ts` |
+| Stars back | 10% back in stars on ALLI orders | 10% of the ALLI subtotal, valued at the exchange rate (so 2,500 ALLI → 0.25 ★) | `src/features/market/rules.ts` |
+
+Change the rule, not the screen: every figure above is read from the file in the last column.

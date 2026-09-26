@@ -6,10 +6,10 @@
     "orientation": "portrait",
     "scheme": "alli",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#0A0F0D",
+    "backgroundColor": "#0A0605",
     "splash": {
       "resizeMode": "contain",
-      "backgroundColor": "#0A0F0D"
+      "backgroundColor": "#0A0605"
     },
     "ios": {
       "supportsTablet": false,
@@ -29,7 +29,7 @@
     "android": {
       "package": "xyz.trilumi.alli",
       "adaptiveIcon": {
-        "backgroundColor": "#0A0F0D"
+        "backgroundColor": "#0A0605"
       },
       "permissions": [
         "ACCESS_COARSE_LOCATION",

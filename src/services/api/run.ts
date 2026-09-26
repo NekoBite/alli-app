@@ -1,5 +1,5 @@
 import { isMock } from '@/config/env';
-import { RUN_CREDIT_RULES, extraRunsCost } from '@/features/run/credits';
+import { RUN_CREDIT_RULES, extraRunsCost, type PayCurrency } from '@/features/run/credits';
 import { calculateReward, starsToAlli } from '@/features/run/rewards';
 import { DEFAULT_SHOE_TIER, type ShoeTier } from '@/features/run/shoes';
 import { creditStepSamples } from '@/features/run/steps';
@@ -61,9 +61,9 @@ export interface RunApi {
    * trip. How the USDT is actually collected follows the custody decision in
    * README §1 — until that is made, the mock simply grants the credits.
    */
-  buyRuns(count: number): Promise<RunEntitlement>;
+  buyRuns(count: number, currency: PayCurrency): Promise<RunEntitlement>;
   /** Renews the membership for another month and grants its run credits. */
-  renewMembership(): Promise<RunEntitlement>;
+  renewMembership(currency: PayCurrency): Promise<RunEntitlement>;
 }
 
 const live: RunApi = {
@@ -105,9 +105,11 @@ const live: RunApi = {
       body: { stars, toAddress, day: dayKey() },
     }),
 
-  buyRuns: (count) => request('/v1/run/credits', { method: 'POST', body: { runs: count } }),
+  buyRuns: (count, currency) =>
+    request('/v1/run/credits', { method: 'POST', body: { runs: count, currency } }),
 
-  renewMembership: () => request('/v1/run/membership/renew', { method: 'POST' }),
+  renewMembership: (currency) =>
+    request('/v1/run/membership/renew', { method: 'POST', body: { currency } }),
 };
 
 let mockProfile: RunProfile = {
@@ -210,7 +212,7 @@ const mock: RunApi = {
     );
   },
 
-  async buyRuns(count) {
+  async buyRuns(count, _currency) {
     const runs = Math.floor(count);
     const remaining =
       RUN_CREDIT_RULES.maxExtraRunsPerMonth - mockEntitlement.extraRunsBoughtThisMonth;
@@ -228,7 +230,7 @@ const mock: RunApi = {
     return delay(readEntitlement(), 700);
   },
 
-  async renewMembership() {
+  async renewMembership(_currency) {
     const now = Date.now();
     const current = mockEntitlement.membership.activeUntil ?? now;
     // Renewing early extends rather than restarts — the reference app opens

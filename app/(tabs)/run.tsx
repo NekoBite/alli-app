@@ -1,29 +1,32 @@
-import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { useEffect } from 'react';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import {
   Button,
   Card,
   EmptyState,
+  IconTile,
+  InviteBanner,
   Pill,
   ProgressBar,
-  Row,
   Screen,
+  ScreenHeader,
   SectionHeader,
   StatTile,
   Text,
 } from '@/components';
-import { RUN_CREDIT_RULES, remainingPurchasableRuns } from '@/features/run/credits';
-import { GOAL_RULES, weekGoals, weekTotals, type DayGoal } from '@/features/run/goals';
-import { questProgress, REWARD_RULES, starsToAlli, stepsToGo } from '@/features/run/rewards';
-import { SHOES, SHOE_ORDER, shoeFor } from '@/features/run/shoes';
+import { weekGoals, type DayGoal } from '@/features/run/goals';
+import { questProgress, REWARD_RULES, starsToAlli } from '@/features/run/rewards';
+import { SHOE_ORDER, SHOES, shoeFor, type ShoeTier } from '@/features/run/shoes';
 import { useRunStore } from '@/features/run/store';
 import type { RunSummary } from '@/features/run/types';
-import { colors, radius, spacing } from '@/theme';
-import { formatDistance, formatDuration, formatPoints, formatToken, formatStars } from '@/utils/format';
-import { formatServerTime, relativeTime } from '@/utils/time';
+import { colors, gradient, radius, spacing } from '@/theme';
+import { formatDistance, formatDuration, formatPoints, formatStars, formatToken } from '@/utils/format';
+import { relativeTime } from '@/utils/time';
+import { LinearGradient } from 'expo-linear-gradient';
 
+/** 2.2 ALLI RUN — the run hub: quest, run balance, stars, shoes and the week. */
 export default function RunScreen() {
   const router = useRouter();
   const { history, profile, entitlement, entitlementError, refresh, loading, canStart } =
@@ -34,258 +37,243 @@ export default function RunScreen() {
   }, [refresh]);
 
   const start = canStart();
-  const week = weekGoals(history);
-  const totals = weekTotals(week);
-  const buyableLeft = remainingPurchasableRuns(entitlement.extraRunsBoughtThisMonth);
-
   const shoe = shoeFor(profile.shoeTier);
-  const questDone = profile.starsEarnedToday > 0;
-  const progress = questProgress(profile.stepsToday);
-  const toGo = stepsToGo(profile.stepsToday);
-  const questPays = REWARD_RULES.starsPerQuest * shoe.rewardMultiplier;
+  const top = SHOES[SHOE_ORDER[SHOE_ORDER.length - 1] ?? 'leather'];
+  const member = entitlement.membership.status === 'active';
+  const week = weekGoals(history);
 
   return (
-    <Screen scroll={false}>
-      <FlatList
-        data={history}
-        keyExtractor={(item) => item.id}
-        showsVerticalScrollIndicator={false}
-        refreshing={loading}
-        onRefresh={refresh}
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <Card style={styles.card}>
-              <View style={styles.rowBetween}>
-                <Text variant="heading">Today&apos;s quest</Text>
-                <Pill
-                  label={questDone ? 'Complete' : 'In progress'}
-                  color={questDone ? colors.green : colors.cyan}
-                  dot
-                />
-              </View>
-
-              <View style={styles.metricRow}>
-                <Text variant="title" color={questDone ? colors.green : colors.ink}>
-                  {formatPoints(profile.stepsToday)}
-                </Text>
-                <Text variant="body" color={colors.ink2}>
-                  of {formatPoints(REWARD_RULES.dailyStepGoal)} steps
-                </Text>
-              </View>
-              <ProgressBar progress={progress} color={questDone ? colors.green : colors.cyan} />
-
-              <Text variant="caption" color={colors.ink2}>
-                {questDone
-                  ? `Quest complete — ${questPays} star${questPays === 1 ? '' : 's'} earned today. Steps from here count towards tomorrow.`
-                  : `${formatPoints(toGo)} GPS-verified steps to go. Completing pays ${questPays} star${questPays === 1 ? '' : 's'} at your ${shoe.name} tier.`}
-              </Text>
-
-              <Button
-                label="Start a run"
-                size="lg"
-                disabled={!start.ok}
-                onPress={() => router.push('/run/active')}
-              />
-              {start.reason ? (
-                <Text variant="caption" color={colors.warning}>
-                  {start.reason}
-                </Text>
-              ) : null}
-            </Card>
-
-            <Card style={styles.card}>
-              <View style={styles.rowBetween}>
-                <Text variant="heading">Run balance</Text>
-                <Pill
-                  label={`${entitlement.runsLeft} run${entitlement.runsLeft === 1 ? '' : 's'} left`}
-                  color={entitlement.runsLeft > 0 ? colors.green : colors.warning}
-                  dot
-                />
-              </View>
-
-              <View style={styles.stats}>
-                <StatTile label="This month" value={entitlement.runsThisMonth.toString()} />
-                <StatTile
-                  label="Runs left"
-                  value={entitlement.runsLeft.toString()}
-                  color={entitlement.runsLeft > 0 ? colors.ink : colors.warning}
-                />
-                <StatTile label="Streak" value={`${profile.streakDays}d`} color={colors.cyan} />
-              </View>
-
-              <Text variant="caption" color={colors.ink3}>
-                One credit per recorded run · credits never expire · server time{' '}
-                {formatServerTime(entitlement.serverTime)}
-              </Text>
-              <Text variant="caption" color={colors.ink2}>
-                {formatToken(RUN_CREDIT_RULES.extraRunPriceUsdt, 'USDT')} per extra run · bought{' '}
-                {entitlement.extraRunsBoughtThisMonth}/{RUN_CREDIT_RULES.maxExtraRunsPerMonth} this
-                month
-              </Text>
-              <Button
-                label="Buy runs"
-                variant="secondary"
-                disabled={buyableLeft === 0}
-                onPress={() => router.push('/run/credits')}
-              />
-              {entitlementError ? (
-                <Text variant="caption" color={colors.ink3}>
-                  Run credits could not be read ({entitlementError}). The server decides whether a
-                  run is recorded.
-                </Text>
-              ) : null}
-            </Card>
-
-            <Card style={styles.card} tone="premium">
-              <View style={styles.rowBetween}>
-                <Text variant="heading">Stars</Text>
-                <Text variant="title" color={colors.gold}>
-                  {formatStars(profile.starsBalance)}
-                </Text>
-              </View>
-              <Text variant="caption" color={colors.ink2}>
-                ≈ {formatToken(starsToAlli(profile.starsBalance), 'ALLI')} · 1 star ={' '}
-                {formatToken(REWARD_RULES.alliPerStar, 'ALLI')}
-              </Text>
-              <Button
-                label="Exchange stars for ALLI"
-                variant="secondary"
-                disabled={profile.starsBalance <= 0}
-                onPress={() => router.push('/run/stars')}
-              />
-            </Card>
-
-            <SectionHeader
-              title="Your shoes"
-              subtitle={`${shoe.name} · ${shoe.rewardMultiplier}× the daily reward`}
-            />
-            <Card style={styles.card}>
-              {SHOE_ORDER.map((tier) => (
-                <Row
-                  key={tier}
-                  label={SHOES[tier].name}
-                  value={`${SHOES[tier].rewardMultiplier}× · ${REWARD_RULES.starsPerQuest * SHOES[tier].rewardMultiplier} ★/day`}
-                  valueColor={tier === shoe.tier ? colors.gold : colors.ink2}
-                  emphasis={tier === shoe.tier}
-                />
-              ))}
-              <Text variant="caption" color={colors.ink3}>
-                {shoe.blurb} Upgrading is not built yet — the tier is issued and held server-side.
-              </Text>
-            </Card>
-
-            <SectionHeader
-              title="This week"
-              subtitle={`${totals.questDays} of ${GOAL_RULES.weekDays} quests completed`}
-            />
-            <Card style={styles.card}>
-              <View style={styles.week}>
-                {week.map((day) => (
-                  <DayColumn key={day.day} day={day} />
-                ))}
-              </View>
-              <View style={styles.stats}>
-                <StatTile label="Steps" value={formatPoints(totals.steps)} />
-                <StatTile label="Distance" value={formatDistance(totals.metres)} unit="km" />
-              </View>
-              <View style={styles.stats}>
-                <StatTile
-                  label="Move minutes"
-                  value={Math.round(totals.movingSeconds / 60).toString()}
-                />
-                <StatTile label="Stars" value={formatStars(totals.stars)} color={colors.gold} />
-              </View>
-            </Card>
-
-            <Text variant="heading" style={styles.sectionTitle}>
-              Recent runs
-            </Text>
-          </View>
-        }
-        ListEmptyComponent={
-          <EmptyState
-            title="No runs yet"
-            body="Your finished runs show up here with the steps they added to the quest, and why."
+    <Screen inTabs onRefresh={refresh} refreshing={loading}>
+      <ScreenHeader
+        eyebrow="Run the future"
+        title="ALLI RUN"
+        right={
+          <Pill
+            label={member ? 'Member' : 'No membership'}
+            color={member ? colors.ok : colors.inkFaint}
           />
         }
-        renderItem={({ item }) => <RunRow run={item} />}
-        contentContainerStyle={styles.list}
       />
+
+      <View style={styles.stack}>
+        <InviteBanner title="Invite runners" subtitle="40% of their Silver upgrade" href="/referrals/run" />
+
+        <Card tone="hero" style={styles.gap}>
+          <View style={styles.rowBetween}>
+            <View style={styles.flex}>
+              <Text variant="label" color={colors.redHot}>
+                Today’s quest
+              </Text>
+              <Text variant="heading" style={styles.questFigure}>
+                {formatPoints(profile.stepsToday)} / {formatPoints(REWARD_RULES.dailyStepGoal)}
+              </Text>
+            </View>
+            <Button
+              label="Start"
+              size="sm"
+              disabled={!start.ok}
+              onPress={() => router.push('/run/active')}
+              style={styles.start}
+            />
+          </View>
+          <ProgressBar progress={questProgress(profile.stepsToday)} />
+          {start.reason ? (
+            <Text variant="caption" color={colors.warn}>
+              {start.reason}
+            </Text>
+          ) : null}
+        </Card>
+
+        <Card style={styles.gap}>
+          <SectionHeader
+            title="Run balance"
+            actionLabel="Buy runs"
+            onAction={() => router.push('/run/credits')}
+          />
+          <View style={styles.stats}>
+            <StatTile
+              label="This month"
+              value={`${entitlement.runsThisMonth}/${entitlement.membership.runsPerRenewal}`}
+            />
+            <StatTile
+              label="Runs left"
+              value={entitlementError ? '—' : String(entitlement.runsLeft)}
+              color={entitlement.runsLeft > 0 || entitlementError ? colors.ink : colors.warn}
+            />
+            <StatTile label="Streak" value={`${profile.streakDays} d`} />
+          </View>
+          {entitlementError ? (
+            <Text variant="caption" color={colors.inkFaint}>
+              Run credits could not be read. The server decides whether a run is recorded.
+            </Text>
+          ) : null}
+        </Card>
+
+        <Card style={styles.gap}>
+          <Text variant="label" color={colors.inkFaint}>
+            Stars
+          </Text>
+          <View style={styles.rowBetween}>
+            <Text variant="title">{formatStars(profile.starsBalance)} ★</Text>
+            <Button
+              label="Exchange"
+              variant="secondary"
+              size="sm"
+              disabled={profile.starsBalance <= 0}
+              onPress={() => router.push('/run/stars')}
+            />
+          </View>
+          <Text variant="mono" color={colors.inkFaint}>
+            1 ★ = {formatToken(starsToAlli(1))} ALLI · exchange any time
+          </Text>
+        </Card>
+
+        <Card style={styles.gap}>
+          <SectionHeader title="Your shoes" note={`up to ${top.rewardMultiplier}×`} />
+          <View style={styles.shoes}>
+            {SHOE_ORDER.map((tier) => (
+              <ShoeTile
+                key={tier}
+                tier={tier}
+                owned={SHOE_ORDER.indexOf(tier) <= SHOE_ORDER.indexOf(shoe.tier)}
+                current={tier === shoe.tier}
+              />
+            ))}
+          </View>
+        </Card>
+
+        <Card style={styles.gap}>
+          <SectionHeader title="This week" note={`${formatPoints(week.reduce((s, d) => s + d.steps, 0))} steps`} />
+          <WeekChart days={week} />
+        </Card>
+
+        <SectionHeader title="Recent runs" />
+        {history.length === 0 ? (
+          <EmptyState
+            glyph="R"
+            title="No runs yet"
+            body="Finished runs show up here with the steps they added to the quest, and why."
+          />
+        ) : (
+          history.slice(0, 10).map((run) => <RunRow key={run.id} run={run} />)
+        )}
+      </View>
     </Screen>
   );
 }
 
-/** One day in the week strip: quest progress, its weekday, today picked out. */
-function DayColumn({ day }: { day: DayGoal }) {
+function ShoeTile({ tier, owned, current }: { tier: ShoeTier; owned: boolean; current: boolean }) {
+  const shoe = SHOES[tier];
+  const detail = () =>
+    Alert.alert(
+      `${shoe.name} NFT shoe`,
+      `${shoe.blurb}\n\n×${shoe.rewardMultiplier.toFixed(1)} on the daily quest.${
+        owned ? '' : '\n\nNot owned yet. Upgrades are sold as NFTs on BNB Smart Chain.'
+      }`,
+    );
   return (
-    <View style={styles.day}>
-      <View style={styles.dayBar}>
-        <ProgressBar
-          progress={Math.min(1, day.steps / GOAL_RULES.dailyStepGoal)}
-          color={day.questMet ? colors.green : colors.cyan}
-          height={6}
-        />
-      </View>
-      <Text variant="label" color={day.isToday ? colors.ink : colors.ink3}>
-        {day.label}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${shoe.name} shoe, ${owned ? 'owned' : 'locked'}`}
+      onPress={detail}
+      style={[styles.shoe, current && styles.shoeCurrent, !owned && styles.shoeLocked]}
+    >
+      <IconTile glyph={shoe.name[0] ?? '?'} size={34} />
+      <Text variant="bodyStrong" style={styles.shoeName}>
+        {shoe.name}
       </Text>
+      <Text variant="mono" color={current ? colors.redHot : colors.inkFaint}>
+        ×{shoe.rewardMultiplier.toFixed(1)}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Bar per day, today in the primary gradient; a bar that met the quest is full-strength red. */
+function WeekChart({ days }: { days: DayGoal[] }) {
+  const max = Math.max(REWARD_RULES.dailyStepGoal, ...days.map((d) => d.steps));
+  return (
+    <View style={styles.chart} accessibilityLabel="Steps per day this week">
+      {days.map((day) => {
+        const h = Math.max(4, (day.steps / max) * 84);
+        return (
+          <View key={day.day} style={styles.col}>
+            <View style={styles.barSlot}>
+              {day.isToday ? (
+                <LinearGradient colors={gradient.primary} style={[styles.bar, { height: h }]} />
+              ) : (
+                <View
+                  style={[
+                    styles.bar,
+                    { height: h, backgroundColor: day.questMet ? colors.red : 'rgba(226, 69, 34, 0.3)' },
+                  ]}
+                />
+              )}
+            </View>
+            <Text variant="mono" color={day.isToday ? colors.redHot : colors.inkFaint}>
+              {day.label.slice(0, 1)}
+            </Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
 
 function RunRow({ run }: { run: RunSummary }) {
   const counted = run.reward.eligibleSteps > 0;
-
   return (
-    <Card style={styles.runCard} tone={counted ? 'default' : 'muted'}>
-      <View style={styles.runHead}>
-        <Text variant="caption" color={colors.ink2}>
+    <Card tone={counted ? 'default' : 'muted'} style={styles.gap} onPress={undefined}>
+      <View style={styles.rowBetween}>
+        <Text variant="mono" color={colors.inkDim}>
           {relativeTime(run.startedAt)}
         </Text>
         <View style={styles.pills}>
-          {run.reward.stars > 0 ? (
-            <Pill label={`+${run.reward.stars} ★`} color={colors.gold} />
-          ) : null}
-          {counted ? (
-            <Pill label={`+${formatPoints(run.reward.eligibleSteps)} steps`} color={colors.green} />
-          ) : (
-            <Pill label="Not counted" color={colors.warning} />
-          )}
+          {run.reward.stars > 0 ? <Pill label={`+${formatStars(run.reward.stars)} ★`} /> : null}
+          <Pill
+            label={counted ? `+${formatPoints(run.reward.eligibleSteps)} steps` : 'Not counted'}
+            color={counted ? colors.ok : colors.warn}
+          />
         </View>
       </View>
-
-      <View style={styles.runStats}>
-        <StatTile label="Steps" value={formatPoints(run.reward.steps)} />
-        <StatTile label="Distance" value={formatDistance(run.distanceMetres)} unit="km" />
-        <StatTile label="Moving" value={formatDuration(run.movingSeconds)} />
+      <View style={styles.stats}>
+        <StatTile kind="bare" label="Distance" value={`${formatDistance(run.distanceMetres)} km`} />
+        <StatTile kind="bare" label="Moving" value={formatDuration(run.movingSeconds)} />
+        <StatTile kind="bare" label="Steps" value={formatPoints(run.reward.steps)} />
       </View>
-
       {run.reward.flags.length > 0 ? (
-        <Row label="Flags" value={run.reward.flags.join(', ')} valueColor={colors.warning} />
+        <Text variant="mono" color={colors.warn}>
+          {run.reward.flags.join(' · ')}
+        </Text>
       ) : null}
     </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  list: { paddingBottom: spacing.xxl, gap: spacing.md },
-  header: { gap: spacing.lg, paddingTop: spacing.lg },
-  card: { gap: spacing.sm },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  metricRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
-  stats: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.xs },
-  week: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' },
-  day: { flex: 1, alignItems: 'center', gap: spacing.xs },
-  dayBar: {
-    width: '100%',
-    height: 40,
-    justifyContent: 'flex-end',
-    borderRadius: radius.sm,
-    overflow: 'hidden',
+  flex: { flex: 1 },
+  stack: { gap: 14 },
+  gap: { gap: spacing.md },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  questFigure: { fontSize: 22, marginTop: 6 },
+  start: { minWidth: 76, minHeight: 40 },
+  stats: { flexDirection: 'row', gap: spacing.sm },
+  shoes: { flexDirection: 'row', gap: spacing.sm },
+  shoe: {
+    flex: 1,
+    gap: 6,
+    padding: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.raised2,
   },
-  sectionTitle: { marginTop: spacing.sm },
-  runCard: { gap: spacing.md },
-  runHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  shoeCurrent: { borderColor: colors.redHot, backgroundColor: 'rgba(226, 69, 34, 0.12)' },
+  shoeLocked: { opacity: 0.45 },
+  shoeName: { fontSize: 13 },
+  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, height: 110 },
+  col: { flex: 1, alignItems: 'center', gap: 6 },
+  barSlot: { height: 86, width: '100%', justifyContent: 'flex-end', alignItems: 'center' },
+  bar: { width: '70%', borderRadius: 4 },
   pills: { flexDirection: 'row', gap: spacing.sm },
-  runStats: { flexDirection: 'row', gap: spacing.md },
 });

@@ -1,126 +1,181 @@
-import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Alert, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Button, Card, Pill, Row, Screen, SectionHeader, Text } from '@/components';
+import {
+  Button,
+  ConfirmSheet,
+  IconTile,
+  Screen,
+  ScreenHeader,
+  Segmented,
+  Text,
+  toast,
+} from '@/components';
 import { PREMIUM_SEEDS, STANDARD_SEEDS } from '@/features/garden/catalog';
 import { useGardenStore } from '@/features/garden/store';
 import type { Seed } from '@/features/garden/types';
 import { useWalletStore } from '@/features/wallet/store';
-import { colors, spacing } from '@/theme';
+import { colors, radius, spacing } from '@/theme';
 import { formatStars, formatToken } from '@/utils/format';
 
+type Catalogue = 'standard' | 'premium';
+
+/** 3.2 Seed shop — ALLI seeds (the low-carbon farm) and Premium seeds bought with BSC USDT. */
 export default function SeedShopScreen() {
   const router = useRouter();
   const plant = useGardenStore((state) => state.plant);
-  const balanceOf = useWalletStore((state) => state.balanceOf);
-  const [buying, setBuying] = useState<string | null>(null);
+  const { balanceOf, balances, load } = useWalletStore();
+  const [catalogue, setCatalogue] = useState<Catalogue>('standard');
+  const seeds = catalogue === 'standard' ? STANDARD_SEEDS : PREMIUM_SEEDS;
+  const [selectedId, setSelectedId] = useState<string>(STANDARD_SEEDS[0]?.id ?? '');
+  const [confirm, setConfirm] = useState(false);
+  const [buying, setBuying] = useState(false);
 
-  const buy = async (seed: Seed) => {
-    const balance = Number(balanceOf(seed.currency)?.formatted ?? 0);
-    if (balance < seed.price) {
-      Alert.alert(
-        'Not enough balance',
-        `You need ${formatToken(seed.price, seed.currency)} to plant a ${seed.name}.`,
-      );
-      return;
-    }
+  useEffect(() => {
+    if (balances.length === 0) void load();
+  }, [balances.length, load]);
 
-    setBuying(seed.id);
+  const selected = seeds.find((s) => s.id === selectedId) ?? seeds[0];
+  const balance = (seed: Seed) => Number(balanceOf(seed.currency)?.formatted ?? 0);
+  const affordable = (seed: Seed) => balance(seed) >= seed.price;
+
+  const switchTo = (next: Catalogue) => {
+    setCatalogue(next);
+    setSelectedId((next === 'standard' ? STANDARD_SEEDS : PREMIUM_SEEDS)[0]?.id ?? '');
+  };
+
+  const buy = async () => {
+    if (!selected) return;
+    setBuying(true);
     try {
-      await plant(seed);
-      router.back();
+      const plot = await plant(selected);
+      setConfirm(false);
+      toast(`${selected.name} planted`, 'ok');
+      router.replace({ pathname: '/garden/plot/[id]', params: { id: plot.id } });
     } catch (error) {
-      Alert.alert('Could not plant', (error as Error).message);
+      setConfirm(false);
+      toast((error as Error).message, 'error');
     } finally {
-      setBuying(null);
+      setBuying(false);
     }
   };
 
+  const footer = selected ? (
+    <>
+      <View style={styles.balance}>
+        <Text variant="caption" color={colors.inkDim}>
+          Balance
+        </Text>
+        <Text variant="monoStrong" color={affordable(selected) ? colors.ink : colors.warn}>
+          {formatToken(balance(selected))} {selected.currency}
+        </Text>
+      </View>
+      {affordable(selected) ? (
+        <Button
+          label={`Plant ${selected.name} · ${formatToken(selected.price)} ${selected.currency}`}
+          onPress={() => setConfirm(true)}
+        />
+      ) : (
+        <Button label={`Top up ${selected.currency}`} onPress={() => router.push('/wallet/receive')} />
+      )}
+    </>
+  ) : null;
+
   return (
-    <Screen>
-      <SectionHeader
-        title="Standard seeds"
-        subtitle="Bought with ALLI · the low-carbon farm: weather, compost, practices"
+    <Screen footer={footer}>
+      <ScreenHeader eyebrow="Plant to earn" title="Seed shop" back />
+
+      <Segmented
+        options={[
+          { value: 'standard', label: 'ALLI seeds' },
+          { value: 'premium', label: 'Premium · USDT' },
+        ]}
+        value={catalogue}
+        onChange={switchTo}
       />
-      {STANDARD_SEEDS.map((seed) => (
-        <SeedCard key={seed.id} seed={seed} busy={buying === seed.id} onBuy={() => void buy(seed)} />
-      ))}
-
-      <View style={styles.spacer} />
-
-      <SectionHeader
-        title="Premium seeds"
-        subtitle="Bought with USDT on BNB Chain · simple care, bigger reward and run bonus"
-      />
-      {PREMIUM_SEEDS.map((seed) => (
-        <SeedCard key={seed.id} seed={seed} busy={buying === seed.id} onBuy={() => void buy(seed)} />
-      ))}
-
-      <Text variant="caption" color={colors.ink3} style={styles.note}>
-        Every tree pays in stars, the same stars the daily run quest pays, and every tree lives
-        thirty days. Premium seeds are funded in USDT, so their stars come from the treasury rather
-        than from other players.
+      <Text variant="caption" color={colors.inkDim} style={styles.intro}>
+        {catalogue === 'standard'
+          ? 'ALLI seeds play the low-carbon farm: minigames earn compost and practices that keep your tree healthy.'
+          : 'Premium seeds are bought with BSC USDT: a simpler loop — no weather, bought fertiliser — and a higher payout.'}
       </Text>
+
+      <View style={styles.grid}>
+        {seeds.map((seed) => {
+          const on = seed.id === selected?.id;
+          const can = affordable(seed);
+          return (
+            <Pressable
+              key={seed.id}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={`${seed.name}, ${formatToken(seed.price)} ${seed.currency}`}
+              onPress={() => setSelectedId(seed.id)}
+              style={[styles.seed, on && styles.seedOn]}
+            >
+              <IconTile glyph={seed.name[0] ?? '?'} size={42} />
+              <Text variant="bodyStrong" style={styles.seedName} numberOfLines={1}>
+                {seed.name.replace(' (Premium)', '')}
+              </Text>
+              <Text variant="mono" color={colors.inkDim}>
+                ≈ {formatStars(seed.starsPerDay)} ★ / night
+              </Text>
+              <Text variant="mono" color={colors.inkFaint} style={styles.small}>
+                {seed.lifetimeDays} days to grow
+              </Text>
+              <Text variant="figure" color={on ? colors.redHot : can ? colors.ink : colors.warn} style={styles.price}>
+                {formatToken(seed.price)} {seed.currency}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {selected ? (
+        <Text variant="caption" color={colors.inkFaint} style={styles.intro}>
+          {selected.blurb} Up to {formatStars(selected.starsPerDay * selected.lifetimeDays)} ★ over its
+          life before streak and carbon bonuses; +{Math.round(selected.runBonus * 100)}% on the run
+          quest while it thrives.
+        </Text>
+      ) : null}
+
+      {selected ? (
+        <ConfirmSheet
+          visible={confirm}
+          title={`Plant ${selected.name}`}
+          lines={[
+            { label: 'Seed', value: selected.name },
+            { label: 'Care', value: selected.careProfile === 'lowCarbon' ? 'Low-carbon farm' : 'Simple' },
+            { label: 'Lives', value: `${selected.lifetimeDays} days` },
+            { label: 'Network fee', value: '≈ 0.0004 BNB' },
+          ]}
+          total={{ label: 'You pay', value: `${formatToken(selected.price)} ${selected.currency}` }}
+          note="A BEP-20 payment to the ALLI payment router. The tree is planted once the transfer confirms."
+          confirmLabel="Sign & plant"
+          busy={buying}
+          onConfirm={() => void buy()}
+          onCancel={() => setConfirm(false)}
+        />
+      ) : null}
     </Screen>
   );
 }
 
-function SeedCard({ seed, busy, onBuy }: { seed: Seed; busy: boolean; onBuy: () => void }) {
-  const premium = seed.tier === 'premium';
-
-  return (
-    <Card tone={premium ? 'premium' : 'default'} style={styles.card}>
-      <View style={styles.head}>
-        <View style={styles.title}>
-          <Text variant="bodyStrong">{seed.name}</Text>
-          <Text variant="caption" color={colors.ink2}>
-            {seed.species}
-          </Text>
-        </View>
-        <Pill label={seed.currency} color={premium ? colors.gold : colors.green} />
-      </View>
-
-      <Text variant="body" color={colors.ink2}>
-        {seed.blurb}
-      </Text>
-
-      <Row
-        label="Care"
-        value={seed.careProfile === 'lowCarbon' ? 'Low-carbon farm' : 'Simple'}
-        valueColor={seed.careProfile === 'lowCarbon' ? colors.teal : colors.ink}
-      />
-      <Row
-        label="Pays per thriving night"
-        value={`${formatStars(seed.starsPerDay)} ★`}
-        valueColor={colors.gold}
-      />
-      <Row label="Lives" value={`${seed.lifetimeDays} days`} />
-      <Row
-        label="Run bonus while thriving"
-        value={`+${(seed.runBonus * 100).toFixed(0)}%`}
-        valueColor={colors.cyan}
-      />
-      <Row
-        label="Up to"
-        value={`${formatStars(seed.starsPerDay * seed.lifetimeDays)} ★ before streak and carbon bonuses`}
-        emphasis
-      />
-
-      <Button
-        label={`Plant · ${formatToken(seed.price, seed.currency)}`}
-        variant={premium ? 'premium' : 'primary'}
-        loading={busy}
-        onPress={onBuy}
-      />
-    </Card>
-  );
-}
-
 const styles = StyleSheet.create({
-  card: { gap: spacing.sm, marginBottom: spacing.md },
-  head: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md },
-  title: { flex: 1, gap: 2 },
-  spacer: { height: spacing.xl },
-  note: { marginTop: spacing.lg },
+  intro: { marginVertical: spacing.md },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  seed: {
+    width: '48.4%',
+    gap: 6,
+    padding: 14,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.raised,
+  },
+  seedOn: { borderColor: colors.redHot, backgroundColor: colors.raised2 },
+  seedName: { marginTop: 6, fontSize: 16 },
+  small: { fontSize: 11 },
+  price: { marginTop: 6 },
+  balance: { flexDirection: 'row', justifyContent: 'space-between' },
 });

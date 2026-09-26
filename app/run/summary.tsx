@@ -1,152 +1,127 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
-import { Button, Card, EmptyState, Pill, ProgressBar, Row, Screen, StatTile, Text } from '@/components';
-import { averageSpeed } from '@/features/run/geo';
-import { explainFlag, questProgress, starsToAlli } from '@/features/run/rewards';
-import { useRunStore } from '@/features/run/store';
-import { colors, spacing } from '@/theme';
 import {
-  formatDistance,
-  formatDuration,
-  formatPace,
-  formatPoints,
-  formatToken,
-} from '@/utils/format';
+  Button,
+  Card,
+  EmptyState,
+  KeyValueCard,
+  Pill,
+  Screen,
+  ScreenHeader,
+  StatTile,
+  Text,
+} from '@/components';
+import { averageSpeed } from '@/features/run/geo';
+import { explainFlag } from '@/features/run/rewards';
+import { useRunStore } from '@/features/run/store';
+import { colors, fonts, spacing } from '@/theme';
+import { formatDistance, formatDuration, formatPace, formatPoints, formatStars } from '@/utils/format';
 
+/** 2.4 Run summary — the reward is only final once the server confirms the track. */
 export default function RunSummaryScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const run = useRunStore((state) => state.history.find((item) => item.id === id));
+  const toToday = () => router.replace('/(tabs)');
 
   if (!run) {
     return (
       <Screen>
+        <ScreenHeader title="Run summary" back={toToday} />
         <EmptyState
           title="Run not found"
           body="This run is no longer in your history."
-          actionLabel="Back to runs"
-          onAction={() => router.replace('/(tabs)/run')}
+          actionLabel="Back to Today"
+          onAction={toToday}
         />
       </Screen>
     );
   }
 
   const { reward } = run;
-  const counted = reward.eligibleSteps > 0;
+  const ended = new Date(run.endedAt ?? run.startedAt);
+  const time = `${String(ended.getHours()).padStart(2, '0')}:${String(ended.getMinutes()).padStart(2, '0')}`;
+  const uncounted = Math.max(0, reward.steps - reward.eligibleSteps);
 
   return (
-    <Screen>
-      <View style={styles.hero}>
-        <Text variant="label" color={colors.ink2}>
-          {counted ? 'Steps counted' : 'No steps counted'}
-        </Text>
-        <Text variant="hero" color={counted ? colors.green : colors.warning}>
-          {formatPoints(reward.eligibleSteps)}
-        </Text>
-        {reward.stars > 0 ? (
-          <Pill
-            label={`Quest complete · +${reward.stars} ★ · ${formatToken(starsToAlli(reward.stars), 'ALLI')}`}
-            color={colors.gold}
-          />
-        ) : (
-          <Text variant="caption" color={colors.ink2}>
-            {formatPoints(reward.stepsToday)} of {formatPoints(reward.questGoal)} steps today
-          </Text>
-        )}
-      </View>
-
-      <Card style={styles.card}>
-        <View style={styles.stats}>
-          <StatTile label="Distance" value={formatDistance(run.distanceMetres)} unit="km" />
-          <StatTile label="Moving" value={formatDuration(run.movingSeconds)} />
-          <StatTile
-            label="Pace"
-            value={formatPace(averageSpeed(run.distanceMetres, run.movingSeconds))}
-            unit="/km"
-          />
-        </View>
-      </Card>
-
-      <Card style={styles.card} tone={reward.questPaid ? 'premium' : 'muted'}>
-        <Text variant="heading">
-          {reward.questCompleted ? "Today's quest" : 'Quest progress'}
-        </Text>
-        <ProgressBar
-          progress={questProgress(reward.stepsToday)}
-          color={reward.questCompleted ? colors.green : colors.cyan}
-        />
-        <Row label="Steps this run" value={formatPoints(reward.eligibleSteps)} />
-        <Row label="Steps today" value={formatPoints(reward.stepsToday)} />
-        <Row label="Quest goal" value={formatPoints(reward.questGoal)} />
-        <Text variant="caption" color={colors.ink2}>
-          {reward.questPaid
-            ? 'This run carried the day over the line. Only steps backed by GPS movement counted.'
-            : reward.questCompleted
-              ? "Today's quest was already paid. These steps bank towards the streak."
-              : `${formatPoints(Math.max(0, reward.questGoal - reward.stepsToday))} GPS-verified steps left today.`}
-        </Text>
-      </Card>
-
-      <Card style={styles.card} tone="muted">
-        <Text variant="heading">How this was calculated</Text>
-        <Row label="Steps that counted" value={formatPoints(reward.eligibleSteps)} />
-        <Row label="Validated distance" value={`${formatDistance(reward.eligibleMetres)} km`} />
-        <Row
-          label="Quest reward"
-          value={`${reward.baseStars} ★`}
-          valueColor={reward.baseStars > 0 ? colors.gold : colors.ink2}
-        />
-        <Row label="Shoe multiplier" value={`${reward.shoeMultiplier}×`} />
-        <Row
-          label="Stars awarded"
-          value={reward.stars.toString()}
-          valueColor={reward.stars > 0 ? colors.gold : colors.ink2}
-          emphasis
-        />
-        <Row
-          label="Server confirmed"
-          value={run.confirmed ? 'Yes' : 'Pending'}
-          valueColor={run.confirmed ? colors.green : colors.warning}
-        />
-      </Card>
-
-      {reward.flags.length > 0 ? (
-        <Card style={styles.card} tone="muted">
-          <Text variant="heading" color={colors.warning}>
-            Why this run did not count
-          </Text>
-          {reward.flags.map((flag) => (
-            <Text key={flag} variant="body" color={colors.ink2}>
-              • {explainFlag(flag)}
-            </Text>
-          ))}
-        </Card>
-      ) : null}
-
-      <View style={styles.actions}>
-        <Button label="Done" size="lg" onPress={() => router.replace('/(tabs)/run')} />
-        {reward.stars > 0 ? (
+    <Screen
+      footer={
+        <View style={styles.pair}>
           <Button
             label="Exchange stars"
             variant="secondary"
             onPress={() => router.replace('/run/stars')}
+            style={styles.flex}
           />
-        ) : (
-          <Button
-            label="Go to wallet"
-            variant="secondary"
-            onPress={() => router.replace('/(tabs)/wallet')}
-          />
-        )}
+          <Button label="Done" onPress={toToday} style={styles.flex} />
+        </View>
+      }
+    >
+      <ScreenHeader eyebrow={`Today · ${time}`} title="Run complete" back={() => router.replace('/(tabs)/run')} />
+
+      <Card tone="hero" style={styles.hero}>
+        <Text variant="label" color={colors.redHot} center>
+          {reward.questPaid ? 'Stars awarded' : 'Steps counted'}
+        </Text>
+        <Text style={styles.big} center>
+          {reward.questPaid ? `+${formatStars(reward.stars)} ★` : formatPoints(reward.eligibleSteps)}
+        </Text>
+        <Pill
+          label={run.confirmed ? 'Server confirmed' : 'Awaiting server'}
+          color={run.confirmed ? colors.ok : colors.warn}
+          style={styles.badge}
+        />
+      </Card>
+
+      <View style={styles.stats}>
+        <StatTile label="Distance" value={`${formatDistance(run.distanceMetres)} km`} />
+        <StatTile label="Moving" value={formatDuration(run.movingSeconds)} />
+        <StatTile label="Pace" value={formatPace(averageSpeed(run.distanceMetres, run.movingSeconds))} />
       </View>
+
+      <KeyValueCard
+        title="How this was calculated"
+        lines={[
+          { label: 'Steps that counted', value: formatPoints(reward.eligibleSteps) },
+          { label: 'Validated distance', value: `${formatDistance(reward.eligibleMetres)} km` },
+          { label: 'Steps today', value: `${formatPoints(reward.stepsToday)} / ${formatPoints(reward.questGoal)}` },
+          { label: 'Quest reward', value: `${formatStars(reward.baseStars)} ★` },
+          { label: 'Shoe multiplier', value: `×${reward.shoeMultiplier.toFixed(1)}` },
+        ]}
+        total={{ label: 'Stars awarded', value: `${formatStars(reward.stars)} ★` }}
+      />
+
+      {uncounted > 0 || reward.flags.length > 0 ? (
+        <View style={styles.notes}>
+          {uncounted > 0 ? (
+            <Text variant="mono" color={colors.inkFaint}>
+              {formatPoints(uncounted)} steps not counted — no GPS movement backed them.
+            </Text>
+          ) : null}
+          {reward.flags.map((flag) => (
+            <Text key={flag} variant="caption" color={colors.warn}>
+              {explainFlag(flag)}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {!reward.questPaid && !reward.questCompleted ? (
+        <Text variant="caption" color={colors.inkDim} style={styles.notes}>
+          {formatPoints(Math.max(0, reward.questGoal - reward.stepsToday))} GPS-verified steps left
+          before today’s quest pays.
+        </Text>
+      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  hero: { paddingVertical: spacing.xl, alignItems: 'center', gap: spacing.xs },
-  card: { gap: spacing.sm, marginBottom: spacing.lg },
-  stats: { flexDirection: 'row', gap: spacing.md },
-  actions: { gap: spacing.md },
+  flex: { flex: 1 },
+  hero: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xl, marginBottom: 14 },
+  big: { fontFamily: fonts.display, fontSize: 60, lineHeight: 72, color: colors.ink, letterSpacing: -1.2 },
+  badge: { alignSelf: 'center' },
+  stats: { flexDirection: 'row', gap: spacing.sm, marginBottom: 14 },
+  notes: { gap: spacing.xs, marginTop: spacing.md },
+  pair: { flexDirection: 'row', gap: 10 },
 });

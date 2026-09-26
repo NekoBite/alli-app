@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { runApi } from '@/services/api';
 import { dayKey } from '@/utils/time';
-import { checkCanStart, checkPurchase, RUN_CREDIT_RULES } from './credits';
+import { checkCanStart, checkPurchase, RUN_CREDIT_RULES, type PayCurrency } from './credits';
 import { calculateReward } from './rewards';
 import { DEFAULT_SHOE_TIER } from './shoes';
 import type { RewardBreakdown, RunEntitlement, RunSession, RunSummary } from './types';
@@ -60,9 +60,9 @@ type RunState = {
   submitRun: (session: RunSession, rejectedPoints: number) => Promise<RunSummary>;
   /** Burns stars and sends the matching ALLI to the user's wallet. */
   exchangeStars: (stars: number, toAddress: string) => Promise<{ txHash: string; alli: number }>;
-  /** Buys extra run credits. The USDT charge is the server's to make. */
-  buyRuns: (count: number) => Promise<void>;
-  renewMembership: () => Promise<void>;
+  /** Buys extra run credits, paid in ALLI or USDT. */
+  buyRuns: (count: number, currency: PayCurrency) => Promise<void>;
+  renewMembership: (currency: PayCurrency) => Promise<void>;
   /** Whether a run may be started — credits, in a form the button can explain. */
   canStart: () => { ok: boolean; reason?: string };
 };
@@ -145,24 +145,24 @@ export const useRunStore = create<RunState>((set, get) => ({
     }
   },
 
-  async buyRuns(count) {
+  async buyRuns(count, currency) {
     const check = checkPurchase(count, get().entitlement);
     if (!check.ok) throw new Error(check.reason);
 
     set({ buying: true, error: undefined });
     try {
-      set({ entitlement: await runApi.buyRuns(count), buying: false, entitlementError: undefined });
+      set({ entitlement: await runApi.buyRuns(count, currency), buying: false, entitlementError: undefined });
     } catch (error) {
       set({ buying: false, error: (error as Error).message });
       throw error;
     }
   },
 
-  async renewMembership() {
+  async renewMembership(currency) {
     set({ renewing: true, error: undefined });
     try {
       set({
-        entitlement: await runApi.renewMembership(),
+        entitlement: await runApi.renewMembership(currency),
         renewing: false,
         entitlementError: undefined,
       });

@@ -12,7 +12,13 @@ export type AuthUser = {
   createdAt: string;
 };
 
-export type AuthSession = { token: string; expiresAt: string; user: AuthUser };
+export type AuthSession = {
+  token: string;
+  expiresAt: string;
+  user: AuthUser;
+  /** True when this sign-in created the account: the app shows the wallet-ready screen once. */
+  isNew?: boolean;
+};
 
 /** What the phone hands the server after a provider's consent screen. */
 export type OAuthCode = {
@@ -52,6 +58,8 @@ const HOUR = 3_600_000;
 
 function mockSession(email: string | null, displayName: string | null): AuthSession {
   return {
+    // Mock mode treats every sign-in as the first, so the onboarding screen can be reviewed.
+    isNew: true,
     token: `mock-session-${Date.now().toString(36)}`,
     expiresAt: new Date(Date.now() + 30 * 24 * HOUR).toISOString(),
     user: {

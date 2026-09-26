@@ -24,6 +24,8 @@ export interface CardApi {
   setFrozen(frozen: boolean): Promise<VisaCard>;
   /** Converts ALLI/USDT into spendable fiat on the card. */
   topUp(amountUsd: number, from: 'ALLI' | 'USDT'): Promise<VisaCard>;
+  /** Which token tops the card up at swipe time. */
+  setFundingToken(token: 'ALLI' | 'USDT'): Promise<VisaCard>;
 }
 
 const live: CardApi = {
@@ -33,6 +35,7 @@ const live: CardApi = {
   setFrozen: (frozen) => request('/v1/card/freeze', { method: 'POST', body: { frozen } }),
   topUp: (amountUsd, from) =>
     request('/v1/card/topup', { method: 'POST', body: { amountUsd, from } }),
+  setFundingToken: (token) => request('/v1/card/funding', { method: 'POST', body: { token } }),
 };
 
 let mockCard: VisaCard | undefined = {
@@ -46,6 +49,12 @@ let mockCard: VisaCard | undefined = {
 };
 
 const mock: CardApi = {
+  async setFundingToken(token) {
+    if (!mockCard) throw new Error('No card on this account.');
+    mockCard = { ...mockCard, fundingToken: token };
+    return delay({ ...mockCard });
+  },
+
   getCard: () => delay(mockCard ? { ...mockCard } : undefined),
 
   getCardTransactions: () =>

@@ -1,13 +1,26 @@
-import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Button, Card, Row, Screen, SectionHeader, Text } from '@/components';
+import {
+  Button,
+  Card,
+  ConfirmSheet,
+  EmptyState,
+  Field,
+  IconTile,
+  KeyValueCard,
+  Screen,
+  ScreenHeader,
+  Text,
+  toast,
+} from '@/components';
+import { unitPrice } from '@/features/market/rules';
 import { useMarketStore } from '@/features/market/store';
-import type { PaymentMethod, ShippingAddress } from '@/features/market/types';
+import type { Order, ShippingAddress } from '@/features/market/types';
 import { useWalletStore } from '@/features/wallet/store';
-import { colors, radius, spacing, type } from '@/theme';
-import { formatFiat, formatToken } from '@/utils/format';
+import { colors, spacing } from '@/theme';
+import { formatToken, shortAddress } from '@/utils/format';
 
 const EMPTY_ADDRESS: ShippingAddress = {
   fullName: '',
@@ -18,192 +31,208 @@ const EMPTY_ADDRESS: ShippingAddress = {
   phone: '',
 };
 
+const FIELDS: { key: keyof ShippingAddress; label: string; phone?: boolean }[] = [
+  { key: 'fullName', label: 'Full name' },
+  { key: 'line1', label: 'Address' },
+  { key: 'line2', label: 'Apartment, suite (optional)' },
+  { key: 'city', label: 'City' },
+  { key: 'postcode', label: 'Postcode' },
+  { key: 'country', label: 'Country' },
+  { key: 'phone', label: 'Phone', phone: true },
+];
+
+/** 4.4 Checkout — address, payment source, itemised total; Pay opens the signature sheet. */
 export default function CheckoutScreen() {
   const router = useRouter();
-  const { entries, total, setAddress, checkout, placing, address } = useMarketStore();
-  const balanceOf = useWalletStore((state) => state.balanceOf);
-
-  const [method, setMethod] = useState<PaymentMethod>('ALLI');
+  const { entries, totals, currency, setAddress, checkout, pay, placing, address } = useMarketStore();
+  const { account, balanceOf, balances, load } = useWalletStore();
   const [form, setForm] = useState<ShippingAddress>(address ?? EMPTY_ADDRESS);
+  const [editing, setEditing] = useState(!address);
+  // The order is created once and reused, so cancelling the sheet and paying again never
+  // leaves a second order behind.
+  const [pending, setPending] = useState<Order | null>(null);
+  const [sheet, setSheet] = useState(false);
+
+  useEffect(() => {
+    if (balances.length === 0) void load();
+  }, [balances.length, load]);
 
   const lines = entries();
-  const amount = total(method);
-  const balance = Number(balanceOf(method)?.formatted ?? 0);
-  const affordable = balance >= amount;
+  const t = totals();
+  const balance = Number(balanceOf(currency)?.formatted ?? 0);
+  const affordable = balance >= t.total;
+  const complete = FIELDS.every((f) => f.key === 'line2' || (form[f.key] ?? '').trim() !== '');
 
-  const complete =
-    form.fullName.trim() !== '' &&
-    form.line1.trim() !== '' &&
-    form.city.trim() !== '' &&
-    form.postcode.trim() !== '' &&
-    form.country.trim() !== '' &&
-    form.phone.trim() !== '';
+  if (lines.length === 0 && !pending) {
+    return (
+      <Screen>
+        <ScreenHeader title="Checkout" back />
+        <EmptyState title="Nothing to pay for" body="Your cart is empty." actionLabel="Browse the market" onAction={() => router.replace('/(tabs)/market')} />
+      </Screen>
+    );
+  }
 
-  const placeOrder = async () => {
+  const startPay = async () => {
     setAddress(form);
+    setEditing(false);
     try {
-      const order = await checkout(method);
-      Alert.alert(
-        'Order placed',
-        `Order ${order.id} is waiting for payment of ${
-          method === 'ALLI' ? formatToken(order.total, 'ALLI') : formatFiat(order.total)
-        }. It ships once the transfer confirms on-chain.`,
-        [{ text: 'OK', onPress: () => router.replace('/(tabs)/market') }],
-      );
+      // The order exists (awaiting payment) before anything is signed, so a failed or abandoned
+      // payment leaves something to retry from.
+      setPending(pending ?? (await checkout(currency)));
+      setSheet(true);
     } catch (error) {
-      Alert.alert('Checkout failed', (error as Error).message);
+      toast((error as Error).message, 'error');
+    }
+  };
+
+  const confirmPay = async () => {
+    if (!pending) return;
+    try {
+      const paid = await pay(pending.id);
+      setSheet(false);
+      setPending(null);
+      router.replace({ pathname: '/market/order/[id]', params: { id: paid.id } });
+    } catch (error) {
+      const id = pending.id;
+      setSheet(false);
+      setPending(null);
+      toast((error as Error).message, 'error');
+      router.replace({ pathname: '/market/order/[id]', params: { id } });
     }
   };
 
   return (
-    <Screen>
-      <SectionHeader title="Pay with" />
-      <View style={styles.methods}>
-        {(['ALLI', 'USDT'] as PaymentMethod[]).map((option) => (
-          <Pressable
-            key={option}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: method === option }}
-            onPress={() => setMethod(option)}
-            style={[styles.method, method === option && styles.methodActive]}
-          >
-            <Text variant="bodyStrong" color={method === option ? colors.onGreen : colors.ink}>
-              {option}
-            </Text>
-            <Text variant="caption" color={method === option ? colors.onGreen : colors.ink2}>
-              {option === 'ALLI' ? 'Earned from running' : 'BNB Chain stablecoin'}
+    <Screen
+      footer={
+        <>
+          {affordable ? (
+            <Button
+              label={`Pay ${formatToken(t.total)} ${currency}`}
+              loading={placing && !pending}
+              disabled={!complete}
+              onPress={() => void startPay()}
+            />
+          ) : (
+            <Button label={`Top up ${currency}`} onPress={() => router.push('/wallet/receive')} />
+          )}
+          <Text variant="mono" color={colors.inkFaint} center style={styles.fee}>
+            Network fee ≈ 0.0004 BNB
+          </Text>
+        </>
+      }
+    >
+      <ScreenHeader eyebrow="Review & pay" title="Checkout" back />
+
+      <Card style={styles.block}>
+        <View style={styles.rowBetween}>
+          <Text variant="label" color={colors.inkFaint}>
+            Ship to
+          </Text>
+          <Pressable accessibilityRole="button" onPress={() => setEditing((e) => !e)} hitSlop={8}>
+            <Text variant="caption" color={colors.redHot}>
+              {editing ? 'Done' : 'Change'}
             </Text>
           </Pressable>
-        ))}
+        </View>
+        {editing ? (
+          <View style={styles.form}>
+            {FIELDS.map((f) => (
+              <Field
+                key={f.key}
+                label={f.label}
+                value={form[f.key] ?? ''}
+                onChangeText={(v) => setForm({ ...form, [f.key]: v })}
+                keyboardType={f.phone ? 'phone-pad' : 'default'}
+                accessibilityLabel={f.label}
+              />
+            ))}
+          </View>
+        ) : (
+          <>
+            <Text variant="bodyStrong">{form.fullName}</Text>
+            <Text variant="caption" color={colors.inkDim}>
+              {[form.line1, form.line2, form.city, form.postcode, form.country].filter(Boolean).join(', ')} ·{' '}
+              {form.phone}
+            </Text>
+          </>
+        )}
+      </Card>
+
+      <Card style={styles.block}>
+        <Text variant="label" color={colors.inkFaint}>
+          Pay from
+        </Text>
+        <View style={styles.rowBetween}>
+          <IconTile glyph={currency === 'ALLI' ? 'A' : '$'} size={36} />
+          <View style={styles.flex}>
+            <Text variant="bodyStrong">{currency} wallet</Text>
+            <Text variant="mono" color={colors.inkFaint}>
+              {account ? shortAddress(account.address) : '—'}
+            </Text>
+          </View>
+          <View style={styles.right}>
+            <Text variant="figure" color={affordable ? colors.ink : colors.warn} style={styles.bal}>
+              {formatToken(balance)}
+            </Text>
+            <Text variant="mono" color={colors.inkFaint}>
+              available
+            </Text>
+          </View>
+        </View>
+      </Card>
+
+      <View style={styles.block}>
+        <KeyValueCard
+          lines={[
+            ...lines.map((l) => {
+              const v = l.product.variants?.find((x) => x.id === l.variantId);
+              return {
+                label: `${l.quantity} × ${l.product.name}${v ? ` (${v.label})` : ''}`,
+                value: `${formatToken(unitPrice(l.product, currency) * l.quantity)} ${currency}`,
+              };
+            }),
+            { label: 'Shipping', value: `${formatToken(t.shipping)} ${currency}` },
+          ]}
+          total={{ label: 'You pay', value: `${formatToken(t.total)} ${currency}` }}
+        />
       </View>
 
-      <SectionHeader title="Ship to" />
-      <Card style={styles.card}>
-        <Field label="Full name" value={form.fullName} onChange={(v) => setForm({ ...form, fullName: v })} />
-        <Field label="Address" value={form.line1} onChange={(v) => setForm({ ...form, line1: v })} />
-        <Field
-          label="Apartment, suite (optional)"
-          value={form.line2 ?? ''}
-          onChange={(v) => setForm({ ...form, line2: v })}
-        />
-        <Field label="City" value={form.city} onChange={(v) => setForm({ ...form, city: v })} />
-        <Field
-          label="Postcode"
-          value={form.postcode}
-          onChange={(v) => setForm({ ...form, postcode: v })}
-        />
-        <Field
-          label="Country"
-          value={form.country}
-          onChange={(v) => setForm({ ...form, country: v })}
-        />
-        <Field
-          label="Phone"
-          value={form.phone}
-          onChange={(v) => setForm({ ...form, phone: v })}
-          keyboardType="phone-pad"
-        />
-      </Card>
-
-      <SectionHeader title="Summary" />
-      <Card style={styles.card} tone="muted">
-        {lines.map(({ product, quantity }) => (
-          <Row
-            key={product.id}
-            label={`${product.name} × ${quantity}`}
-            value={
-              method === 'ALLI'
-                ? formatToken(product.priceAlli * quantity, 'ALLI')
-                : formatFiat(product.priceUsd * quantity)
-            }
-          />
-        ))}
-        <Row
-          label="Total"
-          value={method === 'ALLI' ? formatToken(amount, 'ALLI') : formatFiat(amount)}
-          valueColor={colors.green}
-          emphasis
-        />
-        <Row
-          label="Your balance"
-          value={formatToken(balance, method)}
-          valueColor={affordable ? colors.ink2 : colors.danger}
-        />
-      </Card>
-
-      {!affordable ? (
-        <Text variant="caption" color={colors.danger} style={styles.warn}>
-          Not enough {method}. Redeem points or top up before placing this order.
+      <Card tone="warn" style={styles.notice}>
+        <Text variant="bodyStrong" color={colors.warn}>
+          i
         </Text>
-      ) : null}
+        <Text variant="caption" color={colors.inkDim} style={styles.flex}>
+          You’ll sign a BEP-20 payment. Orders can be cancelled until they ship.
+        </Text>
+      </Card>
 
-      <Button
-        label="Place order"
-        size="lg"
-        loading={placing}
-        disabled={!complete || !affordable || lines.length === 0}
-        onPress={() => void placeOrder()}
+      <ConfirmSheet
+        visible={sheet}
+        eyebrow="BEP-20 payment"
+        title={`Pay ${formatToken(t.total)} ${currency}`}
+        lines={[
+          { label: 'Order', value: pending?.number ?? pending?.id ?? '' },
+          { label: 'Items', value: String(lines.reduce((s, l) => s + l.quantity, 0)) },
+          { label: 'Network', value: 'BNB Smart Chain' },
+          { label: 'Network fee', value: '≈ 0.0004 BNB' },
+        ]}
+        total={{ label: 'You pay', value: `${formatToken(pending?.total ?? t.total)} ${currency}` }}
+        confirmLabel="Sign & pay"
+        busy={placing}
+        onConfirm={() => void confirmPay()}
+        onCancel={() => setSheet(false)}
       />
-      <Text variant="caption" color={colors.ink3} style={styles.note}>
-        Placing an order does not move funds. The backend returns a payment address and watches the
-        chain for the transfer before anything ships.
-      </Text>
     </Screen>
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  keyboardType,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  keyboardType?: 'default' | 'phone-pad';
-}) {
-  return (
-    <View style={styles.field}>
-      <Text variant="label" color={colors.ink2}>
-        {label}
-      </Text>
-      <TextInput
-        value={value}
-        onChangeText={onChange}
-        keyboardType={keyboardType ?? 'default'}
-        placeholderTextColor={colors.ink3}
-        style={styles.input}
-        accessibilityLabel={label}
-      />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  methods: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xl },
-  method: {
-    flex: 1,
-    gap: 2,
-    padding: spacing.lg,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-  },
-  methodActive: { backgroundColor: colors.green, borderColor: colors.green },
-  card: { gap: spacing.md, marginBottom: spacing.xl },
-  field: { gap: spacing.xs },
-  input: {
-    ...type.body,
-    color: colors.ink,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.lineNeutral,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  warn: { marginBottom: spacing.md },
-  note: { marginTop: spacing.md },
+  flex: { flex: 1 },
+  block: { gap: spacing.sm, marginBottom: 14 },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  form: { gap: spacing.md },
+  right: { alignItems: 'flex-end' },
+  bal: { fontSize: 15 },
+  notice: { flexDirection: 'row', gap: spacing.md },
+  fee: { fontSize: 11 },
 });

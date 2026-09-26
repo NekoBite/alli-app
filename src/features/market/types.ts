@@ -16,10 +16,23 @@ export type Product = {
   inStock: boolean;
   /** Where the seller ships to. Empty = worldwide. */
   shipsTo: string[];
+  /** Sizes or colours. A product with variants needs one picked before it goes in the cart. */
+  variants?: ProductVariant[];
+  /** Headline campaign for the featured banner (4.1). */
+  featured?: { eyebrow: string; title: string; blurb: string };
+};
+
+export type ProductVariant = {
+  id: string;
+  label: string;
+  /** Units left. 0 = sold out; the chip stays visible but cannot be picked. */
+  stock: number;
 };
 
 export type CartLine = {
   productId: string;
+  /** Required when the product has variants. */
+  variantId?: string;
   quantity: number;
 };
 
@@ -42,8 +55,14 @@ export type Order = {
   createdAt: number;
   lines: CartLine[];
   method: PaymentMethod;
-  /** Charged amount in the chosen token. */
+  /** Charged amount in the chosen token, shipping included. */
   total: number;
+  /** Shipping, in the chosen token. */
+  shipping?: number;
+  /** Stars the stars-back promo credits once the order is paid. */
+  starsBack?: number;
+  /** Human-facing order number, e.g. ALLI-20931. */
+  number?: string;
   status: OrderStatus;
   /** On-chain payment, once settled. */
   txHash?: string;

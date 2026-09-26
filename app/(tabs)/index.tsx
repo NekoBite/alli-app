@@ -1,213 +1,189 @@
-import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
+  Avatar,
   Button,
   Card,
+  InviteBanner,
+  ListRow,
   Pill,
   ProgressBar,
-  Row,
   Screen,
-  SectionHeader,
+  ScreenHeader,
   StatTile,
   Text,
 } from '@/components';
 import { useAuthStore } from '@/features/auth/store';
 import { useGardenStore } from '@/features/garden/store';
+import { initialsFor, openProfileMenu } from '@/features/profile/menu';
+import { formatCount, msLeft, progressFraction } from '@/features/quests/quests';
 import { useQuestStore } from '@/features/quests/store';
-import { WeeklyQuestCard } from '@/features/quests/ui';
-import { questProgress, REWARD_RULES, starsToAlli, stepsToGo } from '@/features/run/rewards';
-import { shoeFor } from '@/features/run/shoes';
+import { useReferralStore } from '@/features/referrals/store';
+import { questProgress, REWARD_RULES } from '@/features/run/rewards';
 import { useRunStore } from '@/features/run/store';
 import { useWalletStore } from '@/features/wallet/store';
 import { colors, spacing } from '@/theme';
-import { formatFiat, formatPoints, formatToken, formatStars } from '@/utils/format';
+import { formatMoney, formatPoints, formatStars, formatToken } from '@/utils/format';
 
-export default function HomeScreen() {
+function greeting(hour = new Date().getHours()): string {
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+/** 2.1 Today — one glance at the quest, the garden, the weekly quest and the balance. */
+export default function TodayScreen() {
   const router = useRouter();
   const run = useRunStore();
   const garden = useGardenStore();
   const wallet = useWalletStore();
   const quest = useQuestStore();
-  const authUser = useAuthStore((state) => state.user);
-  const signOut = useAuthStore((state) => state.signOut);
+  const hub = useReferralStore((s) => s.hub);
+  const refreshHub = useReferralStore((s) => s.refreshHub);
+  const user = useAuthStore((s) => s.user);
 
-  useEffect(() => {
+  const refreshAll = () => {
     void run.refresh();
     void garden.refresh();
     void wallet.load();
     void quest.refresh();
+    void refreshHub();
+  };
+
+  useEffect(() => {
+    refreshAll();
     // Run once on mount; each store guards its own refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const views = garden.views();
-  const thriving = views.filter((view) => view.health === 'thriving');
-  const needingCare = views.filter(
-    (view) => view.health === 'stressed' || view.health === 'wilting',
-  );
   const sparklesWaiting = views.reduce((sum, view) => sum + view.claimableStars, 0);
-
   const alli = wallet.balanceOf('ALLI');
   const canRun = run.canStart();
-  const shoe = shoeFor(run.profile.shoeTier);
-  const questDone = run.profile.starsEarnedToday > 0;
-  const questPays = REWARD_RULES.starsPerQuest * shoe.rewardMultiplier;
+  const progress = questProgress(run.profile.stepsToday);
+  const firstName = user?.displayName?.split(/\s+/)[0] ?? 'runner';
+
+  const snapshot = quest.snapshot;
+  const weekLeftDays = snapshot
+    ? Math.ceil(msLeft(snapshot.current.quest, snapshot.serverTime) / 86_400_000)
+    : 0;
 
   return (
-    <Screen
-      onRefresh={() => {
-        void run.refresh();
-        void garden.refresh();
-        void wallet.refreshBalances();
-        void quest.refresh();
-      }}
-      refreshing={run.loading}
-    >
-      <View style={styles.hero}>
-        <Text variant="label" color={colors.ink2}>
-          Stars held
-        </Text>
-        <Text variant="hero" color={colors.gold}>
-          {formatStars(run.profile.starsBalance)}
-        </Text>
-        <Text variant="caption" color={colors.ink2}>
-          ≈ {formatToken(starsToAlli(run.profile.starsBalance), 'ALLI')} · 1 star ={' '}
-          {formatToken(REWARD_RULES.alliPerStar, 'ALLI')}
-        </Text>
-      </View>
-
-      <Card style={styles.block}>
-        <View style={styles.rowBetween}>
-          <Text variant="heading">Today&apos;s quest</Text>
-          <Pill
-            label={questDone ? 'Complete' : `${shoe.name} · ${shoe.rewardMultiplier}×`}
-            color={questDone ? colors.green : colors.gold}
-            dot
-          />
-        </View>
-
-        <View style={styles.stats}>
-          <StatTile
-            label="Steps"
-            value={formatPoints(run.profile.stepsToday)}
-            color={questDone ? colors.green : colors.ink}
-          />
-          <StatTile
-            label="Stars today"
-            value={formatStars(run.profile.starsEarnedToday)}
-            color={colors.gold}
-          />
-          <StatTile
-            label="Runs left"
-            value={run.entitlement.runsLeft.toString()}
-            color={run.entitlement.runsLeft > 0 ? colors.ink : colors.warning}
-          />
-        </View>
-
-        <ProgressBar
-          progress={questProgress(run.profile.stepsToday)}
-          color={questDone ? colors.green : colors.cyan}
-        />
-        <Text variant="caption" color={colors.ink2}>
-          {questDone
-            ? `Quest complete — ${questPays} star${questPays === 1 ? '' : 's'} earned today.`
-            : `${formatPoints(stepsToGo(run.profile.stepsToday))} of today's ${formatPoints(REWARD_RULES.dailyStepGoal)} GPS-verified steps to go · pays ${questPays} star${questPays === 1 ? '' : 's'}`}
-        </Text>
-
-        <Button
-          label="Start a run"
-          onPress={() => router.push('/run/active')}
-          size="lg"
-          disabled={!canRun.ok}
-        />
-        {canRun.reason ? (
-          <Text variant="caption" color={colors.warning}>
-            {canRun.reason}
-          </Text>
-        ) : null}
-      </Card>
-
-      {quest.snapshot ? (
-        <View style={styles.block}>
-          <WeeklyQuestCard
-            snapshot={quest.snapshot}
-            onOpen={() => router.push('/quests/weekly')}
-            onShare={() => void quest.share()}
-          />
-        </View>
-      ) : null}
-
-      <SectionHeader
-        title="Garden"
-        subtitle={`${views.length} planted · ${thriving.length} thriving`}
-        actionLabel="Open"
-        onAction={() => router.push('/(tabs)/garden')}
+    <Screen inTabs onRefresh={refreshAll} refreshing={run.loading}>
+      <ScreenHeader
+        eyebrow={`${greeting()}, ${firstName}`}
+        title="Today"
+        right={<Avatar initials={initialsFor(user)} onPress={openProfileMenu} />}
       />
-      <Card style={styles.block}>
-        {sparklesWaiting > 0 ? (
-          <Row
-            label="Sparkles waiting on your trees"
-            value={`${formatStars(sparklesWaiting)} ★`}
-            valueColor={colors.gold}
-            emphasis
-          />
-        ) : (
-          <Row label="No sparkles waiting" value="—" />
-        )}
-        <Row
-          label={
-            needingCare.length > 0
-              ? `${needingCare.length} tree${needingCare.length > 1 ? 's' : ''} below the line`
-              : 'Every tree is above the line'
+
+      <View style={styles.stack}>
+        <InviteBanner
+          title="Invite & earn"
+          subtitle={
+            hub
+              ? `4 referral programs · ${`${formatMoney(hub.totalEarnedUsdt)} USDT`} earned`
+              : '4 referral programs · one link per feature'
           }
-          value={needingCare.length > 0 ? 'Needs care' : '✓'}
-          valueColor={needingCare.length > 0 ? colors.warning : colors.green}
+          href="/referrals"
         />
-        <Row
-          label="Garden run bonus"
-          value={`+${((garden.multiplier() - 1) * 100).toFixed(0)}%`}
-          valueColor={colors.cyan}
-        />
-      </Card>
 
-      <SectionHeader
-        title="Wallet"
-        actionLabel="Open"
-        onAction={() => router.push('/(tabs)/wallet')}
-      />
-      <Card style={styles.block}>
-        <Row
-          label="ALLI"
-          value={alli ? formatToken(alli.formatted, 'ALLI') : '—'}
-          valueColor={colors.green}
-          emphasis
-        />
-        {wallet.card ? (
-          <Row
-            label={`Visa •••• ${wallet.card.last4 ?? '----'}`}
-            value={formatFiat(wallet.card.availableUsd)}
-            valueColor={wallet.card.frozen ? colors.ink3 : colors.gold}
+        <Card tone="hero" style={styles.quest}>
+          <View style={styles.rowBetween}>
+            <Text variant="label" color={colors.redHot}>
+              Today’s quest
+            </Text>
+            <Pill label={`${Math.round(progress * 100)}%`} />
+          </View>
+          <View style={styles.baseline}>
+            <Text variant="hero">{formatPoints(run.profile.stepsToday)}</Text>
+            <Text variant="body" color={colors.inkDim}>
+              / {formatPoints(REWARD_RULES.dailyStepGoal)} steps
+            </Text>
+          </View>
+          <ProgressBar progress={progress} height={10} />
+          <View style={styles.stats}>
+            <StatTile label="Stars today" value={`${formatStars(run.profile.starsEarnedToday)} ★`} />
+            <StatTile
+              label="Runs left"
+              value={run.entitlementError ? '—' : String(run.entitlement.runsLeft)}
+              color={run.entitlement.runsLeft > 0 || run.entitlementError ? colors.ink : colors.warn}
+            />
+            <StatTile label="Streak" value={`${run.profile.streakDays} d`} />
+          </View>
+          <Button
+            label="Start a run"
+            onPress={() => router.push('/run/active')}
+            disabled={!canRun.ok}
           />
-        ) : (
-          <Row label="No card yet" value="Apply" valueColor={colors.gold} />
-        )}
-      </Card>
-      <View style={styles.account}>
-        <Text variant="caption" color={colors.ink3} center>
-          Signed in as {authUser?.displayName ?? authUser?.email ?? 'this device'}
-        </Text>
-        <Button label="Sign out" variant="ghost" onPress={() => void signOut()} />
+          {canRun.reason ? (
+            <Text variant="caption" color={colors.warn}>
+              {canRun.reason}
+            </Text>
+          ) : null}
+        </Card>
+
+        <Card style={styles.tight}>
+          <ListRow
+            glyph="G"
+            title="Garden"
+            subtitle={
+              views.length === 0
+                ? 'Plant a seed to start earning overnight'
+                : `${formatStars(sparklesWaiting)} sparkles on your trees`
+            }
+            value={`+${formatStars(sparklesWaiting)} ★`}
+            valueSub="collect"
+            chevron={false}
+            onPress={() => router.push('/(tabs)/garden')}
+          />
+        </Card>
+
+        {snapshot ? (
+          <Card onPress={() => router.push('/quests/weekly')} style={styles.weekly} accessibilityLabel="Weekly community quest">
+            <View style={styles.rowBetween}>
+              <Text variant="label" color={colors.inkFaint}>
+                Weekly community quest
+              </Text>
+              <Text variant="mono" color={colors.inkFaint}>
+                {weekLeftDays}d left
+              </Text>
+            </View>
+            <Text variant="bodyStrong" style={styles.weeklyTitle}>
+              {snapshot.current.quest.title}
+            </Text>
+            <ProgressBar progress={progressFraction(snapshot.current)} height={6} />
+            <Text variant="mono" color={colors.inkFaint}>
+              {formatCount(snapshot.current.community)} / {formatCount(snapshot.current.quest.goal)} ·{' '}
+              {Math.round(progressFraction(snapshot.current) * 100)}%
+            </Text>
+          </Card>
+        ) : null}
+
+        <Card style={styles.tight}>
+          <ListRow
+            glyph="A"
+            title="ALLI balance"
+            subtitle="BEP-20 · BNB Smart Chain"
+            value={alli ? formatToken(alli.formatted) : '—'}
+            valueSub="ALLI"
+            chevron={false}
+            onPress={() => router.push('/(tabs)/wallet')}
+          />
+        </Card>
       </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  account: { marginTop: spacing.xl, gap: spacing.xs, alignItems: 'center' },
-  hero: { paddingTop: spacing.xl, paddingBottom: spacing.xl, gap: spacing.xs },
-  block: { gap: spacing.md, marginBottom: spacing.xl },
+  stack: { gap: 14 },
+  quest: { gap: 14 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  stats: { flexDirection: 'row', gap: spacing.lg },
+  baseline: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
+  stats: { flexDirection: 'row', gap: spacing.sm },
+  tight: { paddingVertical: 7 },
+  weekly: { gap: 10 },
+  weeklyTitle: { fontSize: 16 },
 });
