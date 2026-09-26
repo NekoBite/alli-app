@@ -67,8 +67,8 @@ An ancestor only receives their generation's cut if **both** hold:
 Open question for our build (not resolvable from screenshots): when an ancestor
 is skipped, does their share **roll up** to the next eligible ancestor, or is it
 simply **not paid** (compression vs. no-compression)? Needs a product decision —
-see "Decisions to confirm" below. Default assumption below is *no compression*
-(skipped share is not paid), which is the more conservative emission model.
+see "Decisions to confirm" below. *Decided:* roll-up, with a Gen 1 exception —
+see `docs/referral-programs.md` §3.
 
 ## "Path to Gold"
 
@@ -112,8 +112,9 @@ Cross-checks against ALLI's existing README economics — most already match:
 
 ## Decisions to confirm before implementing
 
-1. **Compression** — does a skipped (Leather / lapsed) ancestor's share roll up
-   to the next eligible ancestor, or go unpaid? (Affects total emission.)
+1. **Compression** — *decided:* a skipped ancestor's share rolls up to the next
+   qualified ancestor; if the skipped ancestor is Gen 1, the share goes to the ALLI
+   treasury (revenue / burn). See `docs/referral-programs.md` §3.
 2. **Upgrade price** — the exact Silver upgrade amount that forms the
    commissionable base (screenshot per-upgrade figures don't resolve to one clean
    price, so the totals are likely seeded/illustrative).
