@@ -1,4 +1,5 @@
 import type { TokenSymbol } from './config';
+import { PAYMENT_KIND, type PaymentKind } from './eip712';
 
 export type Address = string;
 
@@ -35,16 +36,9 @@ export type FeeEstimate = {
   gasPriceWei: string;
 };
 
-/** What a purchase pays for; mirrors `PaymentRouter.Kind` on chain. */
-export type PaymentKind = 'runs' | 'membership' | 'seed' | 'shoe' | 'order';
-
-export const PAYMENT_KIND_CODE: Record<PaymentKind, number> = {
-  runs: 1,
-  membership: 2,
-  seed: 3,
-  shoe: 4,
-  order: 5,
-};
+/** What a purchase pays for, and its `PaymentRouter.KIND_*` code on chain. */
+export type { PaymentKind };
+export const PAYMENT_KIND_CODE = PAYMENT_KIND;
 
 /**
  * A server-quoted payment: the exact token and amount, bound to one payer and a deadline, signed

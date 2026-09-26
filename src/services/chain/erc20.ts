@@ -20,6 +20,7 @@ export const ERC20_ABI = [
  */
 export const REWARD_CLAIM_ABI = [
   'function claim(uint256 amount, uint256 nonce, uint256 deadline, bytes signature)',
+  'function claimFor(address user, uint256 amount, uint256 nonce, uint256 deadline, bytes signature)',
   'function nonceOf(address user) view returns (uint256)',
   'function remainingToday() view returns (uint256)',
   'event Claimed(address indexed user, uint256 amount, uint256 nonce)',
