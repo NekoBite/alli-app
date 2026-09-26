@@ -18,7 +18,9 @@
     "preset": "jest-expo",
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "/server/"
+      "/server/",
+      "/contracts/",
+      "/tools/"
     ]
   },
   "dependencies": {
