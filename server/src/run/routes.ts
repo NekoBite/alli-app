@@ -3,6 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { currentUser, requireUser } from '../auth/middleware.ts';
 import { assertRedemptionAvailable, sendAlli } from '../chain/relayer.ts';
 import { env } from '../config/env.ts';
+import { entitlement } from '../credits/service.ts';
+import { pool } from '../db/pool.ts';
 import { ApiError } from '../lib/errors.ts';
 import { DayQuerySchema, ExchangeSchema, SubmitRunSchema } from './schemas.ts';
 import {
@@ -21,6 +23,12 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
       const { day } = DayQuerySchema.parse(request.query);
       return getProfile(currentUser(request).id, day);
     },
+  });
+
+  /** Run credits and membership. Purchases go through POST /v1/payments/intents (kind runs / membership). */
+  app.get('/v1/run/entitlement', {
+    preHandler: requireUser,
+    handler: async (request) => entitlement(pool, currentUser(request).id),
   });
 
   app.get('/v1/run/runs', {

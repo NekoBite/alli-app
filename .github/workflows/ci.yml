@@ -104,6 +104,33 @@ jobs:
       - name: Test
         run: npm test --workspace server
 
+  contracts:
+    name: Contracts (compile & test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Compile
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
   bundle:
     # Catches what tsc cannot: a bad import path, a missing native module, or
     # anything Hermes refuses to compile. Metro bundles for both platforms on

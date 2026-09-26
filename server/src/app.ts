@@ -4,10 +4,15 @@ import { ZodError } from 'zod';
 
 import { authRoutes } from './auth/routes.ts';
 import { relayerStatus } from './chain/relayer.ts';
+import { paymentsConfig } from './chain/signer.ts';
 import { env, isProduction } from './config/env.ts';
 import { gardenRoutes } from './garden/routes.ts';
 import { questRoutes } from './quests/routes.ts';
+import { marketRoutes } from './market/routes.ts';
+import { paymentRoutes } from './payments/routes.ts';
+import { referralRoutes } from './referrals/routes.ts';
 import { runRoutes } from './run/routes.ts';
+import { walletRoutes } from './wallet/routes.ts';
 import { ApiError } from './lib/errors.ts';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -69,6 +74,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       status: 'ok',
       environment: env.NODE_ENV,
       attestation: env.ATTESTATION,
+      payments: paymentsConfig() ? { available: true } : { available: false, reason: 'PAYMENT_ROUTER_ADDRESS or QUOTE_SIGNER_PRIVATE_KEY is not set' },
       redemption: relayer.configured
         ? { available: true, relayer: relayer.address }
         : { available: false, reason: relayer.reason },
@@ -79,6 +85,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(runRoutes);
   await app.register(gardenRoutes);
   await app.register(questRoutes);
+  await app.register(paymentRoutes);
+  await app.register(marketRoutes);
+  await app.register(referralRoutes);
+  await app.register(walletRoutes);
 
   return app;
 }

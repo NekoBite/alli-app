@@ -1,5 +1,6 @@
 import { pool, transaction, type Db } from '../db/pool.ts';
 import { ApiError } from '../lib/errors.ts';
+import { assertCanRun, spendCredit } from '../credits/service.ts';
 import { recordContribution } from '../quests/service.ts';
 import {
   calculateReward,
@@ -222,6 +223,9 @@ export async function submitRun(userId: string, input: SubmitRunInput): Promise<
       };
     }
 
+    // One credit per recorded run, checked under the same lock (docs/architecture.md §2).
+    await assertCanRun(db, userId);
+
     // Recompute from the raw track. The identical function the phone ran.
     const stats = summarizeTrack(input.track);
 
@@ -277,6 +281,7 @@ export async function submitRun(userId: string, input: SubmitRunInput): Promise<
       ],
     );
     const run = inserted[0]!;
+    await spendCredit(db, userId, run.id);
 
     // Credited steps count towards a community step quest.
     if (reward.eligibleSteps > 0) {

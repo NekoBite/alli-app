@@ -1,103 +1,138 @@
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Button, Card, EmptyState, Row, Screen, Text } from '@/components';
+import {
+  Button,
+  Card,
+  EmptyState,
+  KeyValueCard,
+  Screen,
+  ScreenHeader,
+  Segmented,
+  Stepper,
+  Text,
+} from '@/components';
+import { unitPrice } from '@/features/market/rules';
 import { useMarketStore } from '@/features/market/store';
-import { colors, radius, spacing } from '@/theme';
-import { formatFiat, formatToken } from '@/utils/format';
+import { ProductImage } from '@/features/market/ui/ProductImage';
+import { colors, spacing } from '@/theme';
+import { formatStars, formatToken } from '@/utils/format';
 
+/** 4.3 Cart — steppers, currency toggle, totals with shipping and stars back. */
 export default function CartScreen() {
   const router = useRouter();
-  const { entries, setQuantity, remove, total, clear } = useMarketStore();
+  const { entries, setQuantity, currency, setCurrency, totals, selected, toggleSelected, removeSelected } =
+    useMarketStore();
   const lines = entries();
+  const count = lines.reduce((s, l) => s + l.quantity, 0);
 
   if (lines.length === 0) {
     return (
       <Screen>
+        <ScreenHeader eyebrow="0 items" title="Cart" back />
         <EmptyState
+          glyph="∅"
           title="Your cart is empty"
-          body="Add something from the marketplace and it will show up here."
-          actionLabel="Browse the marketplace"
+          body="Add something from the market and it shows up here."
+          actionLabel="Browse the market"
           onAction={() => router.replace('/(tabs)/market')}
         />
       </Screen>
     );
   }
 
+  const t = totals();
+
   return (
-    <Screen>
-      {lines.map(({ product, quantity }) => (
-        <Card key={product.id} style={styles.line}>
-          <View style={styles.lineHead}>
-            <View style={styles.lineTitle}>
-              <Text variant="bodyStrong">{product.name}</Text>
-              <Text variant="caption" color={colors.green}>
-                {formatToken(product.priceAlli, 'ALLI')} · {formatFiat(product.priceUsd)}
-              </Text>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Remove ${product.name}`}
-              onPress={() => remove(product.id)}
-              hitSlop={8}
-            >
-              <Text variant="caption" color={colors.danger}>
-                Remove
-              </Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.qty}>
-            <Stepper label="−" onPress={() => setQuantity(product.id, quantity - 1)} />
-            <Text variant="bodyStrong">{quantity}</Text>
-            <Stepper label="+" onPress={() => setQuantity(product.id, quantity + 1)} />
-          </View>
-        </Card>
-      ))}
-
-      <Card style={styles.summary} tone="muted">
-        <Row
-          label="Total in ALLI"
-          value={formatToken(total('ALLI'), 'ALLI')}
-          valueColor={colors.green}
-          emphasis
+    <Screen
+      footer={
+        <Button
+          label={`Checkout · ${formatToken(t.total)} ${currency}`}
+          onPress={() => router.push('/market/checkout')}
         />
-        <Row label="Total in USDT" value={formatFiat(total('USDT'))} valueColor={colors.teal} />
-        <Text variant="caption" color={colors.ink3}>
-          Shipping and any duties are added at checkout once an address is set.
-        </Text>
+      }
+    >
+      <ScreenHeader eyebrow={`${count} item${count === 1 ? '' : 's'}`} title="Cart" back />
+
+      <Card style={styles.lines}>
+        {lines.map((line) => {
+          const on = selected.includes(line.key);
+          const variant = line.product.variants?.find((v) => v.id === line.variantId);
+          return (
+            <Pressable
+              key={line.key}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={`Select ${line.product.name}`}
+              onLongPress={() => toggleSelected(line.key)}
+              onPress={() => (selected.length ? toggleSelected(line.key) : undefined)}
+              style={[styles.line, on && styles.lineOn]}
+            >
+              <ProductImage style={styles.thumb} />
+              <View style={styles.flex}>
+                <View style={styles.lineHead}>
+                  <Text variant="bodyStrong" style={styles.flex} numberOfLines={1}>
+                    {line.product.name}
+                  </Text>
+                  <Text variant="monoStrong">
+                    {formatToken(unitPrice(line.product, currency) * line.quantity)} {currency}
+                  </Text>
+                </View>
+                {variant ? (
+                  <Text variant="caption" color={colors.inkDim}>
+                    Size {variant.label}
+                  </Text>
+                ) : null}
+                <View style={styles.stepper}>
+                  <Stepper value={line.quantity} onChange={(q) => setQuantity(line.key, q)} min={0} max={10} />
+                </View>
+              </View>
+            </Pressable>
+          );
+        })}
+        <Pressable
+          accessibilityRole="button"
+          disabled={!selected.length}
+          onPress={removeSelected}
+          hitSlop={8}
+        >
+          <Text variant="caption" color={selected.length ? colors.redHot : colors.inkFaint}>
+            {selected.length ? `Remove selected (${selected.length})` : 'Long-press a line to select it'}
+          </Text>
+        </Pressable>
       </Card>
 
-      <Button label="Checkout" size="lg" onPress={() => router.push('/market/checkout')} />
-      <Button label="Clear cart" variant="ghost" onPress={clear} />
+      <Segmented
+        options={[
+          { value: 'ALLI', label: 'Pay in ALLI' },
+          { value: 'USDT', label: 'Pay in USDT' },
+        ]}
+        value={currency}
+        onChange={setCurrency}
+        style={styles.toggle}
+      />
+
+      <KeyValueCard
+        lines={[
+          { label: 'Subtotal', value: `${formatToken(t.subtotal)} ${currency}` },
+          { label: 'Shipping', value: `${formatToken(t.shipping)} ${currency}` },
+          ...(currency === 'ALLI'
+            ? [{ label: 'Stars back (10%)', value: `+${formatStars(t.starsBack)} ★`, color: colors.ok }]
+            : []),
+        ]}
+        total={{ label: 'Total', value: `${formatToken(t.total)} ${currency}` }}
+      />
     </Screen>
   );
 }
 
-function Stepper({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={styles.stepper}>
-      <Text variant="bodyStrong" color={colors.green}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  line: { gap: spacing.md, marginBottom: spacing.md, marginTop: spacing.lg },
-  lineHead: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md },
-  lineTitle: { flex: 1, gap: 2 },
-  qty: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
-  stepper: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  summary: { gap: spacing.xs, marginBottom: spacing.lg },
+  flex: { flex: 1 },
+  lines: { gap: spacing.md },
+  line: { flexDirection: 'row', gap: spacing.md, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.line },
+  lineOn: { backgroundColor: colors.redFill, borderRadius: 10 },
+  lineHead: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
+  thumb: { width: 52, height: 52 },
+  stepper: { marginTop: spacing.sm },
+  toggle: { marginVertical: 14 },
 });

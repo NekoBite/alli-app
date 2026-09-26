@@ -17,7 +17,8 @@ import {
 import { findSeed } from '@/features/garden/catalog';
 import { FERTILISERS, MINIGAMES } from '@/features/garden/rules';
 import type { FertiliserId, Garden, MinigameId, Plot } from '@/features/garden/types';
-import { delay, request } from './client';
+import { ApiError, delay, request } from './client';
+import { payIntent } from './payments';
 import { mockQuests } from './mockQuests';
 import { mockStars } from './mockStars';
 
@@ -50,7 +51,21 @@ export interface GardenApi {
 
 const live: GardenApi = {
   getGarden: () => request('/v1/garden'),
-  plant: (seedId) => request('/v1/garden/plots', { method: 'POST', body: { seedId } }),
+  /**
+   * Pays for the seed through the payment router, then plants against that payment. While the
+   * server reports payments closed (503 payments_unavailable) planting is free, as before.
+   */
+  plant: async (seedId) => {
+    try {
+      const { intent } = await payIntent({ kind: 'seed', seedId });
+      return request('/v1/garden/plots', { method: 'POST', body: { seedId, intentId: intent.id } });
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'payments_unavailable') {
+        return request('/v1/garden/plots', { method: 'POST', body: { seedId } });
+      }
+      throw error;
+    }
+  },
   water: (plotId) => request(`/v1/garden/plots/${plotId}/water`, { method: 'POST' }),
   fillSun: (plotId) => request(`/v1/garden/plots/${plotId}/sun`, { method: 'POST' }),
   fertilise: (plotId, kind) =>

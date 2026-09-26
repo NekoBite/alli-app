@@ -3,7 +3,7 @@ import { Contract, JsonRpcProvider, formatUnits, parseUnits } from 'ethers';
 import { isMock } from '@/config/env';
 import { chain, tokenMeta, type TokenSymbol } from './config';
 import { ERC20_ABI } from './erc20';
-import type { Address, ChainClient, FeeEstimate, TokenBalance } from './types';
+import type { Address, ChainClient, FeeEstimate, PaymentIntent, TokenBalance } from './types';
 
 const SYMBOLS: TokenSymbol[] = ['ALLI', 'USDT', 'BNB'];
 
@@ -20,9 +20,9 @@ function toBalance(symbol: TokenSymbol, raw: bigint): TokenBalance {
 /** In-memory chain. Lets every screen render with no RPC and no deployed token. */
 export class MockChainClient implements ChainClient {
   private balances: Record<TokenSymbol, bigint> = {
-    ALLI: parseUnits('1284.5', 18),
-    USDT: parseUnits('42.17', 18),
-    BNB: parseUnits('0.0413', 18),
+    ALLI: parseUnits('12480.5', 18),
+    USDT: parseUnits('1090', 18),
+    BNB: parseUnits('0.014', 18),
   };
 
   async getBalance(_address: Address, symbol: TokenSymbol): Promise<TokenBalance> {
@@ -48,8 +48,20 @@ export class MockChainClient implements ChainClient {
     const value = parseUnits(amount, decimals);
     if (value > this.balances[symbol]) throw new Error('Insufficient balance');
     this.balances[symbol] -= value;
-    return { hash: `0xmock${Date.now().toString(16).padStart(60, '0')}` };
+    return { hash: mockHash() };
   }
+
+  async payIntent(intent: PaymentIntent) {
+    const value = BigInt(intent.amount);
+    if (value > this.balances[intent.symbol]) throw new Error(`Not enough ${intent.symbol}.`);
+    if (intent.deadline * 1000 < Date.now()) throw new Error('This quote has expired. Try again.');
+    this.balances[intent.symbol] -= value;
+    return { hash: mockHash() };
+  }
+}
+
+function mockHash(): string {
+  return `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
 }
 
 /**
@@ -97,6 +109,26 @@ export class EthersChainClient implements ChainClient {
   }
 
   async transfer(): Promise<{ hash: string }> {
+    throw new Error(
+      'Signing is not wired up. Choose a key-custody model first (see mobile/README.md).',
+    );
+  }
+
+  /**
+   * The read half is here so the flow is testable against a node; the two writes (approve, pay)
+   * need the signer the custody decision provides. With a signer `s`:
+   *
+   *   const token = new Contract(intent.token, ERC20_ABI, s);
+   *   if ((await token.allowance(intent.payer, intent.router)) < BigInt(intent.amount))
+   *     await (await token.approve(intent.router, intent.amount)).wait();
+   *   const router = new Contract(intent.router, PAYMENT_ROUTER_ABI, s);
+   *   const tx = await router.pay([intent.id, intent.payer, intent.token, intent.amount,
+   *     PAYMENT_KIND_CODE[intent.kind], intent.deadline], intent.signature);
+   */
+  async payIntent(intent: PaymentIntent): Promise<{ hash: string }> {
+    const token = new Contract(intent.token, ERC20_ABI, this.provider);
+    const balance = (await token.balanceOf!(intent.payer)) as bigint;
+    if (balance < BigInt(intent.amount)) throw new Error(`Not enough ${intent.symbol}.`);
     throw new Error(
       'Signing is not wired up. Choose a key-custody model first (see mobile/README.md).',
     );

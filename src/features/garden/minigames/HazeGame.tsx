@@ -145,7 +145,7 @@ export function HazeGame({ width, height, deadline, onFinish }: GameProps) {
           <View
             style={[
               styles.fill,
-              { width: `${hazePct}%`, backgroundColor: haze > 0.6 ? colors.danger : colors.warning },
+              { width: `${hazePct}%`, backgroundColor: haze > 0.6 ? colors.danger : colors.warn },
             ]}
           />
         </View>

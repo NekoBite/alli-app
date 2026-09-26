@@ -1,0 +1,16 @@
+{
+  "name": "@alli/wireframes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Renders the ALLI App wireframe .fig to PNGs and extracts the FUNCTION notes, offline, without the Figma API.",
+  "type": "commonjs",
+  "scripts": {
+    "render": "node render.js",
+    "notes": "node notes.js > ../../design/wireframes/FUNCTION_NOTES.md"
+  },
+  "dependencies": {
+    "fzstd": "^0.1.1",
+    "kiwi-schema": "^0.5.0",
+    "playwright-core": "^1.55.0"
+  }
+}

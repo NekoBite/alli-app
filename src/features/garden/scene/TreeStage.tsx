@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
     overflow: 'hidden',
-    backgroundColor: colors.surface,
+    backgroundColor: colors.raised,
   },
   caption: {
     position: 'absolute',

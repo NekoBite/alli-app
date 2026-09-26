@@ -1,4 +1,5 @@
 import type { TokenSymbol } from './config';
+import { PAYMENT_KIND, type PaymentKind } from './eip712';
 
 export type Address = string;
 
@@ -35,6 +36,31 @@ export type FeeEstimate = {
   gasPriceWei: string;
 };
 
+/** What a purchase pays for, and its `PaymentRouter.KIND_*` code on chain. */
+export type { PaymentKind };
+export const PAYMENT_KIND_CODE = PAYMENT_KIND;
+
+/**
+ * A server-quoted payment: the exact token and amount, bound to one payer and a deadline, signed
+ * by the server's quote key (EIP-712). The router contract rejects any other amount.
+ */
+export type PaymentIntent = {
+  /** bytes32, 0x-prefixed. */
+  id: string;
+  kind: PaymentKind;
+  payer: Address;
+  symbol: 'ALLI' | 'USDT';
+  token: Address;
+  /** Raw integer amount, decimal string. */
+  amount: string;
+  /** Human-readable amount, for the confirm sheet. */
+  formatted: string;
+  router: Address;
+  /** Unix seconds. */
+  deadline: number;
+  signature: string;
+};
+
 /**
  * Everything the app needs from a chain. `MockChainClient` implements it with
  * fixtures; `EthersChainClient` implements the read half against a real RPC.
@@ -51,4 +77,9 @@ export interface ChainClient {
     /** Human-readable amount; the client converts using the token's decimals. */
     amount: string;
   }): Promise<{ hash: string }>;
+  /**
+   * Pays a server-signed intent through the payment router: approves the router for exactly the
+   * amount if the allowance is short, then calls `pay`. Requires a signer, like `transfer`.
+   */
+  payIntent(intent: PaymentIntent): Promise<{ hash: string }>;
 }

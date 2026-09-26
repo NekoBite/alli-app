@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
-import { Text } from '@/components';
-import { colors, radius, spacing } from '@/theme';
+import { Meter, Text } from '@/components';
+import { colors, spacing } from '@/theme';
 import { countdown } from '@/utils/time';
 import type { StatusView } from '../types';
 
@@ -9,66 +9,30 @@ import type { StatusView } from '../types';
  * The three care meters with the line each must stay above. The line moves
  * with conditions and practices, which is why it is drawn rather than implied.
  */
-export function StatusMeters({ meters }: { meters: StatusView[] }) {
+export function StatusMeters({ meters, caption = true }: { meters: StatusView[]; caption?: boolean }) {
+  const low = meters.filter((m) => !m.ok);
+  const next = meters
+    .filter((m) => m.ok && m.msUntilBelow > 0)
+    .sort((a, b) => a.msUntilBelow - b.msUntilBelow)[0];
   return (
     <View style={styles.root}>
       {meters.map((meter) => (
-        <Meter key={meter.id} meter={meter} />
+        <Meter key={meter.id} label={meter.label} value={meter.level} threshold={meter.threshold} />
       ))}
-    </View>
-  );
-}
-
-function Meter({ meter }: { meter: StatusView }) {
-  const pct = Math.round(meter.level * 100);
-  const color = meter.level <= 0 ? colors.danger : meter.ok ? colors.green : colors.warning;
-  const note =
-    meter.level <= 0
-      ? 'Empty'
-      : meter.ok
-        ? `Below the line in ${countdown(meter.msUntilBelow)}`
-        : 'Below the line';
-
-  return (
-    <View style={styles.meter}>
-      <View style={styles.head}>
-        <Text variant="label" color={colors.ink2}>
-          {meter.label}
+      {caption ? (
+        <Text variant="caption" color={low.length ? colors.warn : colors.inkFaint} style={styles.caption}>
+          {low.length
+            ? `${low.map((m) => m.label).join(' and ')} below the line — top up before tonight or the tree earns nothing.`
+            : next
+              ? `Keep every meter above the line — each night leaves stars on the branches. ${next.label} dips below in ${countdown(next.msUntilBelow)}.`
+              : 'Keep every meter above the line — each night leaves stars on the branches.'}
         </Text>
-        <Text variant="caption" color={meter.ok ? colors.ink2 : color}>
-          {note}
-        </Text>
-      </View>
-      <View
-        accessibilityRole="progressbar"
-        accessibilityLabel={`${meter.label} ${pct}%`}
-        accessibilityValue={{ min: 0, max: 100, now: pct }}
-        style={styles.track}
-      >
-        <View style={[styles.fill, { width: `${pct}%`, backgroundColor: color }]} />
-        <View style={[styles.line, { left: `${Math.round(meter.threshold * 100)}%` }]} />
-      </View>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { gap: spacing.sm },
-  meter: { gap: spacing.xs },
-  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  track: {
-    height: 10,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.pill,
-    overflow: 'hidden',
-  },
-  fill: { height: '100%', borderRadius: radius.pill },
-  line: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 2,
-    backgroundColor: colors.ink,
-    opacity: 0.7,
-  },
+  root: { gap: 2 },
+  caption: { marginTop: spacing.sm, fontSize: 12 },
 });

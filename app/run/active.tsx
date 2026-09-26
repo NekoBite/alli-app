@@ -1,26 +1,26 @@
-import { useCallback, useState } from 'react';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { Alert, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
-import { Button, Card, Pill, ProgressBar, Row, Screen, StatTile, Text } from '@/components';
-import { questProgress, REWARD_RULES, starsToAlli } from '@/features/run/rewards';
+import { Button, Card, Pill, Screen, Text } from '@/components';
+import { GOAL_RULES, weekGoals } from '@/features/run/goals';
+import { REWARD_RULES } from '@/features/run/rewards';
 import { useRunStore } from '@/features/run/store';
-import { useRunSession } from '@/features/run/useRunSession';
 import type { RunSession } from '@/features/run/types';
+import { ActivityRings } from '@/features/run/ui/ActivityRings';
+import { RouteMap } from '@/features/run/ui/RouteMap';
+import { useRunSession } from '@/features/run/useRunSession';
 import { colors, spacing } from '@/theme';
-import {
-  formatDistance,
-  formatDuration,
-  formatPoints,
-  formatSpeedKmh,
-  formatToken,
-} from '@/utils/format';
+import { formatDistance, formatDuration, formatPace, formatPoints } from '@/utils/format';
 
+/** 2.3 Live run — rings, the stat row, the route, and Pause / Finish. */
 export default function ActiveRunScreen() {
   const router = useRouter();
   const session = useRunSession();
-  const { previewReward, submitRun } = useRunStore();
+  const { previewReward, submitRun, history } = useRunStore();
   const [submitting, setSubmitting] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
 
   const preview = previewReward(
     {
@@ -31,8 +31,19 @@ export default function ActiveRunScreen() {
     },
     session.rejectedPoints,
   );
+  const todayMoving = weekGoals(history).find((d) => d.isToday)?.movingSeconds ?? 0;
+  const activeMinutes = (todayMoving + session.movingSeconds) / 60;
 
-  const progress = questProgress(preview.stepsToday);
+  // A ring completing pulses the phone once.
+  const done = useRef({ steps: preview.stepsToday >= REWARD_RULES.dailyStepGoal, minutes: activeMinutes >= GOAL_RULES.activeMinutesGoal });
+  useEffect(() => {
+    const steps = preview.stepsToday >= REWARD_RULES.dailyStepGoal;
+    const minutes = activeMinutes >= GOAL_RULES.activeMinutesGoal;
+    if ((steps && !done.current.steps) || (minutes && !done.current.minutes)) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    }
+    done.current = { steps, minutes };
+  }, [preview.stepsToday, activeMinutes]);
 
   const finish = useCallback(async () => {
     setSubmitting(true);
@@ -74,162 +85,139 @@ export default function ActiveRunScreen() {
     ]);
   };
 
-  return (
-    <Screen>
-      <Card style={styles.card} tone="muted">
-        <Text variant="caption" color={colors.warning}>
-          Run outdoors — steps only count where GPS movement backs them up, so shaking the phone
-          does nothing. Your progress is saved automatically, so you can stop and pick the run up
-          later.
+  const live = session.status === 'running';
+  const footer =
+    session.status === 'idle' ? (
+      <View style={styles.pair}>
+        <Button label="Back" variant="secondary" onPress={() => router.back()} style={styles.flex} />
+        <Button label="Start run" onPress={() => void session.start()} style={styles.flex} />
+      </View>
+    ) : (
+      <>
+        <View style={styles.pair}>
+          {live ? (
+            <Button label="Pause" variant="secondary" onPress={session.pause} style={styles.flex} />
+          ) : (
+            <Button label="Resume" variant="secondary" onPress={() => void session.resume()} style={styles.flex} />
+          )}
+          <Button
+            label="Finish"
+            loading={submitting}
+            onPress={() => void finish()}
+            onLongPress={confirmDiscard}
+            style={styles.flex}
+          />
+        </View>
+        <Text variant="caption" color={colors.inkFaint} center style={styles.hint}>
+          Vehicle-speed segments are flagged and not counted. Long-press Finish to discard.
         </Text>
-        {session.status === 'running' ? (
-          <Text
-            variant="caption"
-            color={session.background === 'started' ? colors.green : colors.warning}
-          >
-            {session.background === 'started'
-              ? 'Recording carries on with the screen off — pocket the phone and keep walking.'
-              : session.background === 'denied'
-                ? 'Background location is off, so this run stops when the screen locks. Allow it in Settings to record with the phone away.'
-                : 'Keep the screen on — this build cannot record in the background.'}
-          </Text>
-        ) : null}
-      </Card>
+      </>
+    );
+
+  return (
+    <Screen footer={footer}>
+      <View style={styles.top}>
+        <Pill
+          kind="status"
+          color={session.track.length > 0 ? colors.ok : colors.warn}
+          label={session.track.length > 0 ? `GPS locked · ${session.track.length} fixes` : 'Waiting for GPS'}
+        />
+        {live ? <Pill label="● Rec" color={colors.redHot} filled /> : session.status === 'paused' ? <Pill label="Paused" color={colors.warn} /> : null}
+      </View>
 
       {session.resumedFromDraft && session.status === 'paused' ? (
-        <Card style={styles.card}>
-          <Row
-            label="Unfinished run"
-            value={`${formatDistance(session.distanceMetres)} km · ${formatDuration(session.elapsedSeconds)}`}
-            valueColor={colors.cyan}
-            emphasis
-          />
-          <Text variant="caption" color={colors.ink2}>
-            Picked up where you left off. Resume to keep recording, or discard it and start fresh.
+        <Card tone="warn" style={styles.notice}>
+          <Text variant="caption" color={colors.inkDim}>
+            Unfinished run restored: {formatDistance(session.distanceMetres)} km ·{' '}
+            {formatDuration(session.elapsedSeconds)}. Resume to keep recording, or long-press Finish
+            to discard it.
           </Text>
         </Card>
       ) : null}
 
-      <View style={styles.metrics}>
-        <Text variant="label" color={colors.ink2}>
-          Steps · GPS
-        </Text>
-        <View style={styles.metricRow}>
-          <Text variant="metric" color={colors.green}>
-            {formatPoints(session.steps)}
-          </Text>
-          <Text variant="heading" color={colors.ink2}>
-            steps
-          </Text>
-        </View>
+      <View style={styles.rings}>
+        <ActivityRings
+          steps={preview.stepsToday}
+          stepGoal={REWARD_RULES.dailyStepGoal}
+          activeMinutes={activeMinutes}
+          minuteGoal={GOAL_RULES.activeMinutesGoal}
+        />
       </View>
 
-      <Card style={styles.card}>
-        <View style={styles.stats}>
-          <StatTile label="Distance" value={formatDistance(session.distanceMetres)} unit="km" />
-          <StatTile label="Time" value={formatDuration(session.elapsedSeconds)} />
-        </View>
-        <View style={styles.stats}>
-          <StatTile label="Speed" value={formatSpeedKmh(session.speedMps)} unit="km/h" />
-          <StatTile
-            label="Steps today"
-            value={formatPoints(preview.stepsToday)}
-            color={preview.flags.length ? colors.warning : colors.green}
-          />
-        </View>
-        <Text variant="caption" color={colors.ink3}>
-          Everything here is an estimate. The server re-checks the run before any star is credited.
-        </Text>
-      </Card>
+      <View style={styles.stats}>
+        <Stat value={formatDistance(session.distanceMetres)} label="km" />
+        <Stat value={formatDuration(session.elapsedSeconds)} label="time" />
+        <Stat value={formatPace(session.speedMps)} label="pace /km" />
+      </View>
 
-      <Card style={styles.card}>
-        <Row
-          label={`Today's quest · ${formatPoints(REWARD_RULES.dailyStepGoal)} steps`}
-          value={`${Math.round(progress * 100)}%`}
-          valueColor={preview.questCompleted ? colors.green : colors.ink}
-          emphasis
-        />
-        <ProgressBar
-          progress={progress}
-          color={preview.questCompleted ? colors.green : colors.cyan}
-        />
-        <Text variant="caption" color={colors.ink2}>
-          {preview.questPaid
-            ? `Quest complete — this run pays ${preview.stars} star${preview.stars === 1 ? '' : 's'} (≈ ${formatToken(starsToAlli(preview.stars), 'ALLI')}) at your ${preview.shoeMultiplier}× tier.`
-            : preview.questCompleted
-              ? "Today's quest is already paid. These steps still bank towards your streak."
-              : `${formatPoints(Math.max(0, REWARD_RULES.dailyStepGoal - preview.stepsToday))} GPS-verified steps to go today.`}
+      <View style={styles.routeHead}>
+        <Text variant="label" color={colors.inkFaint}>
+          Route
         </Text>
-        {session.pedometer === 'unavailable' ? (
-          <Text variant="caption" color={colors.warning}>
-            No step counter on this device. Steps are what earn — without one this run records
-            distance but adds nothing to the quest.
+        <Pressable accessibilityRole="button" onPress={() => setMapOpen((o) => !o)} hitSlop={8}>
+          <Text variant="mono" color={colors.redHot}>
+            {mapOpen ? 'Collapse ↙' : 'Expand ↗'}
           </Text>
-        ) : null}
-      </Card>
+        </Pressable>
+      </View>
+      <RouteMap track={session.track} height={mapOpen ? 320 : 110} />
 
-      <Card style={styles.card} tone="muted">
-        <Row
-          label="GPS fixes"
-          value={`${session.track.length} kept · ${session.rejectedPoints} dropped`}
-          valueColor={session.rejectedPoints > session.track.length ? colors.warning : colors.ink2}
-        />
-        <Row
-          label="Steps"
-          value={`${formatPoints(session.steps)} counted · ${formatPoints(session.droppedSteps)} unbacked`}
-          valueColor={session.droppedSteps > session.steps ? colors.warning : colors.ink2}
-        />
-        <Row label="Moving time" value={formatDuration(session.movingSeconds)} />
-        {preview.flags.length > 0 ? (
-          <View style={styles.flags}>
-            {preview.flags.map((flag) => (
-              <Pill key={flag} label={flag} color={colors.warning} />
-            ))}
-          </View>
-        ) : null}
-      </Card>
-
+      <Text variant="mono" color={colors.inkFaint} style={styles.meta}>
+        {formatPoints(session.steps)} steps counted · {formatPoints(session.droppedSteps)} unbacked ·{' '}
+        {session.rejectedPoints} fixes dropped
+      </Text>
+      {session.status !== 'idle' && preview.flags.length > 0 ? (
+        <View style={styles.flags}>
+          {preview.flags.map((flag) => (
+            <Pill key={flag} label={flag} color={colors.warn} />
+          ))}
+        </View>
+      ) : null}
+      {live && session.background !== 'started' ? (
+        <Text variant="caption" color={colors.warn} style={styles.meta}>
+          {session.background === 'denied'
+            ? 'Background location is off, so this run stops when the screen locks. Allow it in Settings to record with the phone away.'
+            : 'Keep the screen on — this build cannot record in the background.'}
+        </Text>
+      ) : null}
+      {session.pedometer === 'unavailable' ? (
+        <Text variant="caption" color={colors.warn} style={styles.meta}>
+          No step counter on this device. Steps are what earn — this run records distance only.
+        </Text>
+      ) : null}
       {session.error ? (
-        <Text variant="caption" color={colors.danger}>
+        <Text variant="caption" color={colors.danger} style={styles.meta}>
           {session.error}
         </Text>
       ) : null}
-
-      <View style={styles.actions}>
-        {session.status === 'idle' ? (
-          <Button label="Start run" size="lg" onPress={() => void session.start()} />
-        ) : null}
-
-        {session.status === 'running' ? (
-          <>
-            <Button label="Pause" size="lg" variant="secondary" onPress={session.pause} />
-            <Button label="Finish" size="lg" loading={submitting} onPress={() => void finish()} />
-          </>
-        ) : null}
-
-        {session.status === 'paused' ? (
-          <>
-            <Button label="Resume" size="lg" onPress={() => void session.resume()} />
-            <Button
-              label="Finish"
-              size="lg"
-              variant="secondary"
-              loading={submitting}
-              onPress={() => void finish()}
-            />
-            <Button label="Discard" variant="danger" onPress={confirmDiscard} />
-          </>
-        ) : null}
-      </View>
     </Screen>
   );
 }
 
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <View style={styles.stat}>
+      <Text variant="heading" style={styles.statValue}>
+        {value}
+      </Text>
+      <Text variant="mono" color={colors.inkFaint}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  metrics: { paddingVertical: spacing.xl, alignItems: 'center', gap: spacing.xs },
-  metricRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
-  card: { gap: spacing.md, marginBottom: spacing.lg },
-  stats: { flexDirection: 'row', gap: spacing.md },
-  flags: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  actions: { gap: spacing.md, marginTop: spacing.lg },
+  flex: { flex: 1 },
+  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.sm },
+  notice: { marginTop: spacing.md },
+  rings: { alignItems: 'center', marginVertical: spacing.xl },
+  stats: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: spacing.xl },
+  stat: { alignItems: 'center', gap: 2 },
+  statValue: { fontSize: 26, lineHeight: 32 },
+  routeHead: { flexDirection: 'row', gap: spacing.md, alignItems: 'center', marginBottom: spacing.sm },
+  meta: { marginTop: spacing.md },
+  flags: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  pair: { flexDirection: 'row', gap: 10 },
+  hint: { fontSize: 11 },
 });

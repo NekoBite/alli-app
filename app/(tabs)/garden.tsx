@@ -8,7 +8,7 @@ import {
   type ViewToken,
 } from 'react-native';
 
-import { Button, Card, Pill, Screen, Text } from '@/components';
+import { Button, Card, InviteBanner, Pill, Screen, ScreenHeader, Text } from '@/components';
 import { useGardenStore } from '@/features/garden/store';
 import { useQuestStore } from '@/features/quests/store';
 import { WeeklyQuestStrip } from '@/features/quests/ui';
@@ -87,14 +87,22 @@ export default function GardenScreen() {
   const { score, multiplier } = carbon();
 
   return (
-    <Screen scroll={false} style={styles.screen}>
+    <Screen inTabs scroll={false} style={styles.screen}>
+      <View style={styles.top}>
+        <ScreenHeader eyebrow="Plant to earn" title="Garden" right={<Pill label="Beta" />} />
+        <InviteBanner
+          title="Invite gardeners"
+          subtitle="20% of their seed purchases"
+          href="/referrals/garden"
+        />
+      </View>
       <View style={styles.header}>
-        <Text variant="caption" color={colors.ink2}>
+        <Text variant="caption" color={colors.inkDim}>
           {pages.length - 1} {pages.length - 1 === 1 ? 'tree' : 'trees'} · {thriving} thriving
         </Text>
         <Pill
           label={`Carbon ${score > 0 ? '+' : ''}${score} · ${multiplier.toFixed(2)}×`}
-          color={score <= 0 ? colors.teal : colors.warning}
+          color={score <= 0 ? colors.ok : colors.warn}
         />
       </View>
       {error ? (
@@ -138,15 +146,15 @@ function PlantPage({ width, onPlant, first }: { width: number; onPlant: () => vo
         <Text variant="title" center>
           {first ? 'Your garden is empty' : 'Plant another'}
         </Text>
-        <Text variant="body" color={colors.ink2} center>
+        <Text variant="body" color={colors.inkDim} center>
           A tree lives thirty days. Keep its water, sun and soil above the line and every night
           leaves stars on its branches.
         </Text>
-        <Text variant="caption" color={colors.ink3} center>
+        <Text variant="caption" color={colors.inkFaint} center>
           ALLI seeds play the low-carbon farm: weather moves the lines, compost is gathered, and
           how you farm sets the multiplier. USDT seeds keep it simple.
         </Text>
-        <Button label="Open the seed shop" size="lg" onPress={onPlant} />
+        <Button label="Open the seed shop" onPress={onPlant} />
       </Card>
     </View>
   );
@@ -154,22 +162,23 @@ function PlantPage({ width, onPlant, first }: { width: number; onPlant: () => vo
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
+  top: { paddingHorizontal: spacing.gutter, marginBottom: spacing.sm },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.gutter,
     paddingVertical: spacing.sm,
   },
-  error: { paddingHorizontal: spacing.lg },
+  error: { paddingHorizontal: spacing.gutter },
   dots: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: spacing.sm,
     paddingVertical: spacing.sm,
   },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.ink3 },
-  dotActive: { backgroundColor: colors.green, width: 18 },
-  plantPage: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.inkFaint },
+  dotActive: { backgroundColor: colors.redHot, width: 18 },
+  plantPage: { paddingHorizontal: spacing.gutter, paddingTop: spacing.xl },
   plantCard: { gap: spacing.md },
 });

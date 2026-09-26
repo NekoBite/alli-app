@@ -17,10 +17,10 @@ export function TapMeter({ taps, needed, filled, note }: Props) {
   return (
     <View style={styles.root}>
       <View style={styles.head}>
-        <Text variant="bodyStrong" color={filled ? colors.green : colors.ink}>
+        <Text variant="bodyStrong" color={filled ? colors.redHot : colors.ink}>
           {filled ? 'Sun is full for today' : 'Tap the tree for sun'}
         </Text>
-        <Text variant="caption" color={colors.ink2}>
+        <Text variant="caption" color={colors.inkDim}>
           {filled ? '✓' : `${Math.min(taps, needed)} / ${needed}`}
         </Text>
       </View>
@@ -32,7 +32,7 @@ export function TapMeter({ taps, needed, filled, note }: Props) {
         <View style={[styles.fill, { width: `${pct}%` }]} />
       </View>
       {note ? (
-        <Text variant="caption" color={colors.warning}>
+        <Text variant="caption" color={colors.warn}>
           {note}
         </Text>
       ) : null}
@@ -45,9 +45,9 @@ const styles = StyleSheet.create({
   head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   track: {
     height: 8,
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.raised2,
     borderRadius: radius.pill,
     overflow: 'hidden',
   },
-  fill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
+  fill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.warn },
 });

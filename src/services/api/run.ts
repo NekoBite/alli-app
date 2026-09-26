@@ -1,11 +1,12 @@
 import { isMock } from '@/config/env';
-import { RUN_CREDIT_RULES, extraRunsCost } from '@/features/run/credits';
+import { RUN_CREDIT_RULES, extraRunsCost, type PayCurrency } from '@/features/run/credits';
 import { calculateReward, starsToAlli } from '@/features/run/rewards';
 import { DEFAULT_SHOE_TIER, type ShoeTier } from '@/features/run/shoes';
 import { creditStepSamples } from '@/features/run/steps';
 import type { RunEntitlement, RunSession, RunSummary } from '@/features/run/types';
 import { dayKey } from '@/utils/time';
 import { delay, request } from './client';
+import { payIntent } from './payments';
 import { mockQuests } from './mockQuests';
 import { mockStars } from './mockStars';
 
@@ -61,9 +62,11 @@ export interface RunApi {
    * trip. How the USDT is actually collected follows the custody decision in
    * README §1 — until that is made, the mock simply grants the credits.
    */
-  buyRuns(count: number): Promise<RunEntitlement>;
+  buyRuns(count: number, currency: PayCurrency): Promise<RunEntitlement>;
   /** Renews the membership for another month and grants its run credits. */
-  renewMembership(): Promise<RunEntitlement>;
+  renewMembership(currency: PayCurrency): Promise<RunEntitlement>;
+  /** Buys a shoe upgrade (USDT) and returns the profile with the new tier. */
+  upgradeShoe(tier: Exclude<ShoeTier, 'leather'>, day: string): Promise<RunProfile>;
 }
 
 const live: RunApi = {
@@ -105,9 +108,20 @@ const live: RunApi = {
       body: { stars, toAddress, day: dayKey() },
     }),
 
-  buyRuns: (count) => request('/v1/run/credits', { method: 'POST', body: { runs: count } }),
+  // Purchases are payment intents: quote → pay on chain → the server's watcher grants the credits.
+  buyRuns: async (count, currency) => {
+    await payIntent({ kind: 'runs', runs: count, currency });
+    return request('/v1/run/entitlement');
+  },
 
-  renewMembership: () => request('/v1/run/membership/renew', { method: 'POST' }),
+  renewMembership: async (currency) => {
+    await payIntent({ kind: 'membership', currency });
+    return request('/v1/run/entitlement');
+  },
+  upgradeShoe: async (tier, day) => {
+    await payIntent({ kind: 'shoe', tier, currency: 'USDT' });
+    return request(`/v1/run/profile?day=${encodeURIComponent(day)}`);
+  },
 };
 
 let mockProfile: RunProfile = {
@@ -195,6 +209,11 @@ const mock: RunApi = {
     return delay(summary, 700);
   },
 
+  async upgradeShoe(tier) {
+    mockProfile = { ...mockProfile, shoeTier: tier };
+    return delay({ ...mockProfile, starsBalance: mockStars.balance() }, 900);
+  },
+
   async exchangeStars(stars) {
     const count = Math.floor(stars);
     if (count <= 0) throw new Error('Exchange a whole number of stars.');
@@ -210,7 +229,7 @@ const mock: RunApi = {
     );
   },
 
-  async buyRuns(count) {
+  async buyRuns(count, _currency) {
     const runs = Math.floor(count);
     const remaining =
       RUN_CREDIT_RULES.maxExtraRunsPerMonth - mockEntitlement.extraRunsBoughtThisMonth;
@@ -228,7 +247,7 @@ const mock: RunApi = {
     return delay(readEntitlement(), 700);
   },
 
-  async renewMembership() {
+  async renewMembership(_currency) {
     const now = Date.now();
     const current = mockEntitlement.membership.activeUntil ?? now;
     // Renewing early extends rather than restarts — the reference app opens

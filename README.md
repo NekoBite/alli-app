@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/NekoBite/alli-app/actions/workflows/ci.yml/badge.svg)](https://github.com/NekoBite/alli-app/actions/workflows/ci.yml)
 
-React Native (Expo SDK 57) app for Android and iOS. Four features:
+React Native (Expo SDK 57) app for Android and iOS, built to the ALLI App wireframes in
+[`design/wireframes/`](design/wireframes/README.md). Four features, each with its own referral
+program:
 
 1. **ALLI RUN** — a daily quest of 6,000 GPS-verified steps pays **stars**, exchangeable for
    **ALLI** on BNB Smart Chain. The reward scales with the tier of NFT footwear held. Each
@@ -13,6 +15,10 @@ React Native (Expo SDK 57) app for Android and iOS. Four features:
    the line and every night leaves stars on the branches.
 3. **Marketplace** — physical goods paid for in ALLI or USDT.
 4. **Wallet** — ALLI / USDT / BNB balances, send and receive, and a Visa card pairing flow.
+
+Plus **Invite & earn**: one referral link and team per feature, commissions with roll-up
+([`docs/referral-programs.md`](docs/referral-programs.md)). The contracts live in
+[`contracts/`](contracts/README.md), the API in [`server/`](server/README.md).
 
 This is a **scaffold**: navigation, state, types, reward math and the service boundaries are real
 and tested. Everything that needs a backend, a deployed token or a card issuer runs against
@@ -68,19 +74,22 @@ npx eas build -p android     # or use EAS (run `eas init` first)
 
 ```
 app/                       expo-router routes (the file tree IS the navigation)
-  _layout.tsx              root stack + polyfills
+  _layout.tsx              root stack, fonts, toast + polyfills
   (tabs)/                  Today · ALLI RUN · Garden · Market · Wallet
+  onboarding/wallet        1.3 wallet ready — once, after the sign-in that creates the account
   run/active|summary       live run, then the reward breakdown
   run/credits|stars        buy run credits, renew membership, exchange stars
   garden/shop, plot/[id]   seed shop and per-tree detail
   garden/minigame/[game]   the low-carbon minigames
   quests/weekly            the community's weekly quest
   sign-in                  email code or Google / Facebook / X
-  market/product/[id], cart, checkout
+  market/product/[id], cart, checkout, order/[id]
   wallet/send|receive|card
+  referrals/               hub, [program], [program]/tree (list + org chart), share
+  r/[code]                 invite deep link — held through sign-in, then attributed
 src/
-  theme/                   design tokens — colors, spacing, type scale
-  components/              UI primitives (Screen, Button, Card, StatTile, …)
+  theme/                   design tokens from the wireframes — colors, gradient, spacing, type scale
+  components/              UI primitives (Screen, ScreenHeader, Button, Card, ConfirmSheet, …)
   config/env.ts            typed EXPO_PUBLIC_* access
   features/
     run/                   geo filtering, step credit, quest rules, shoe tiers,
@@ -91,11 +100,13 @@ src/
       ui/                  the tree page: meters, tap meter, actions
       minigames/           shell + the games that earn compost and practices
     quests/                the global weekly quest: catalogue, week maths, store, card
-    market/                product catalogue, cart, orders
+    market/                product catalogue, pricing rules, cart, orders
+    referrals/             program rules + commission split (shared with the server), store, UI
     wallet/                balances, transfers, card state
   services/
     api/                   typed backend client — each module has a live and a mock impl
-    chain/                 BSC config, BEP-20 ABI, ChainClient (ethers + mock)
+    api/payments.ts        payment intents: quote → pay on chain → wait for the server
+    chain/                 BSC config, ABIs, EIP-712 types, ChainClient (ethers + mock)
     storage/               AsyncStorage (kv) and Keychain/Keystore (secure)
   utils/                   formatting and time helpers
 ```
@@ -240,19 +251,13 @@ totals, and **no credited number is accepted from the phone** — distance, movi
 day's running total, the shoe multiplier and the stars are all recomputed in
 `server/src/run/service.ts`.
 
-### 3. Run credits and membership, server-side
+### 3. Run credits and membership, server-side — built
 
-The star ledger and the quest are implemented end to end — `GET /v1/run/profile`,
-`GET /v1/run/runs`, `POST /v1/run/runs` and `POST /v1/run/stars/exchange` all work against
-Postgres. What does not exist yet is the credit side: `GET /v1/run/entitlement`,
-`POST /v1/run/credits` and `POST /v1/run/membership/renew` are defined in
-`src/services/api/run.ts` with working mocks and nothing behind them, so there is no credit ledger,
-no membership table, and nothing charges USDT for a purchase. Until those exist the app reads an
-entitlement it cannot get, treats the failure as non-fatal, and lets the server be the one to
-refuse a run.
-
-Shoe tiers are stored (`users.shoe_tier`, issued Leather at registration) and the server applies
-the multiplier, but **upgrading is not built**: nothing mints or sells a Silver or Gold NFT.
+Run credits are an append-only ledger (`credit_ledger`), spent inside `submitRun`'s transaction, and
+bought — like every purchase — through a server-signed payment intent that `PaymentRouter` settles
+on chain (`docs/architecture.md` §5). Shoe upgrades are sold the same way and raise
+`users.shoe_tier` when the payment lands; minting the matching `AlliShoes` NFT is a job not yet
+written. All of it is off until the router is deployed and configured: purchases answer 503.
 
 ### 4. Background recording — built, **unverified on a device**
 
@@ -280,21 +285,20 @@ is never in the bundle. `last4` is the most card data this codebase should ever 
 never touch it. `src/services/api/card.ts` is shaped for that split — swap the endpoints for the
 chosen partner's.
 
-### 6. Token and contracts
+### 6. Token and contracts — written, not deployed
 
-ALLI is not deployed. `src/services/chain/config.ts` carries a `placeholder: true` marker and the
-app falls back to mock balances while the address is unset. `REWARD_CLAIM_ABI` sketches the
-signed-voucher claim (server signs amount + nonce + deadline, contract verifies) but the contract
-is unwritten and unaudited.
+`contracts/` holds AlliToken, RewardClaim, PaymentRouter, AlliShoes and ReferralPayout with tests
+and a deploy script. None is deployed or audited, so `src/services/chain/config.ts` still carries
+`placeholder: true` for ALLI and the app shows mock balances until an address is set. Signing in
+the app (approve + pay, send) waits on the custody decision above.
 
 ### 7. Smaller gaps
 
-- **Auth** — no sign-in. `request()` reads a bearer token from `SECURE_KEYS.session`; nothing
-  writes it yet.
-- **Fonts** — Space Grotesk / Inter to match the web properties; the app uses platform fonts until
-  the files land in `assets/fonts`.
-- **Icons** — tab bar uses two-letter placeholder glyphs.
-- **Maps** — no route map on the run screen; the track is recorded but not drawn.
+- **Icons** — the wireframes use letter tiles and rounded-square tab glyphs; swap in brand icons
+  when they exist.
+- **Maps** — the live run draws the route as a schematic (no map tiles).
+- **Card program** — the card referral is a waitlist and the card endpoints have no server side
+  until an issuer is chosen.
 - **Run drafts** — an in-progress run is written to AsyncStorage every 10 s so it can be picked up
   later. A long track is megabytes of JSON, which AsyncStorage is not built for; move it to SQLite
   before background location ships.

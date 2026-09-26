@@ -5,28 +5,30 @@ import { Text } from './Text';
 
 type Props = {
   title: string;
-  subtitle?: string;
+  /** Right-aligned mono note ("3 left today", "up to 5×"). */
+  note?: string;
   actionLabel?: string;
   onAction?: () => void;
+  color?: string;
 };
 
-export function SectionHeader({ title, subtitle, actionLabel, onAction }: Props) {
+/** Mono label over a group ("EARN COMPOST & PRACTICES", "BUY RUNS OUTRIGHT"). */
+export function SectionHeader({ title, note, actionLabel, onAction, color = colors.inkFaint }: Props) {
   return (
     <View style={styles.root}>
-      <View style={styles.titles}>
-        <Text variant="heading">{title}</Text>
-        {subtitle ? (
-          <Text variant="caption" color={colors.ink2}>
-            {subtitle}
-          </Text>
-        ) : null}
-      </View>
+      <Text variant="label" color={color} style={styles.title}>
+        {title}
+      </Text>
       {actionLabel && onAction ? (
         <Pressable accessibilityRole="button" onPress={onAction} hitSlop={8}>
-          <Text variant="bodyStrong" color={colors.green}>
-            {actionLabel}
+          <Text variant="caption" color={colors.redHot}>
+            {actionLabel} →
           </Text>
         </Pressable>
+      ) : note ? (
+        <Text variant="mono" color={colors.inkFaint} style={styles.note}>
+          {note}
+        </Text>
       ) : null}
     </View>
   );
@@ -35,10 +37,11 @@ export function SectionHeader({ title, subtitle, actionLabel, onAction }: Props)
 const styles = StyleSheet.create({
   root: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
     marginBottom: spacing.md,
   },
-  titles: { flex: 1, gap: 2 },
+  title: { flex: 1 },
+  note: { fontSize: 11 },
 });

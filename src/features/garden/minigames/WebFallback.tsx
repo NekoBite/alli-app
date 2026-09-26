@@ -8,7 +8,7 @@ import type { GameProps } from './types';
 export function WebFallback({ width, height, onFinish }: GameProps) {
   return (
     <View style={[styles.root, { width, height }]}>
-      <Text variant="body" color={colors.ink2} center>
+      <Text variant="body" color={colors.inkDim} center>
         Minigames render on iOS and Android.
       </Text>
       <Button label="Back" variant="secondary" onPress={() => onFinish(false)} />

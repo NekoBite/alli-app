@@ -68,3 +68,9 @@ export function formatSpeedKmh(metresPerSecond: number): string {
   if (!Number.isFinite(metresPerSecond) || metresPerSecond <= 0) return '0.0';
   return (metresPerSecond * 3.6).toFixed(1);
 }
+
+/** Money amounts that are always shown to the cent (commissions, USDT totals): "1,007.47". */
+export function formatMoney(amount: number): string {
+  if (!Number.isFinite(amount)) return '0.00';
+  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}

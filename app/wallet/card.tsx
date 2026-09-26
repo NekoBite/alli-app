@@ -1,191 +1,201 @@
-import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useEffect, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
-import { Button, Card, Pill, Row, Screen, SectionHeader, Text } from '@/components';
+import {
+  Button,
+  Card,
+  ListRow,
+  Logo,
+  Pill,
+  Screen,
+  ScreenHeader,
+  SectionHeader,
+  Segmented,
+  StatTile,
+  Steps,
+  Text,
+  Toggle,
+  toast,
+} from '@/components';
+import { useAuthStore } from '@/features/auth/store';
 import type { CardStatus } from '@/features/wallet/types';
 import { useWalletStore } from '@/features/wallet/store';
-import { colors, radius, spacing } from '@/theme';
+import { colors, fonts, gradient, radius, spacing } from '@/theme';
 import { formatFiat } from '@/utils/format';
 import { relativeTime } from '@/utils/time';
 
-const STATUS_COPY: Record<CardStatus, string> = {
-  'not-requested': 'Not applied for yet.',
-  'kyc-required': 'Identity verification is needed before a card can be issued.',
-  'kyc-pending': 'Your documents are with the issuer. This usually takes 1–2 business days.',
-  'kyc-rejected': 'The issuer could not verify your identity. Contact support to retry.',
-  ordered: 'Approved. Your physical card is being produced.',
-  shipped: 'Your card is on its way.',
-  active: 'Active and ready to spend.',
-  frozen: 'Frozen. No new authorizations will go through.',
+/** Where each issuer status sits on the three-step pairing stepper. */
+const PAIR_STEP: Record<CardStatus, number> = {
+  'not-requested': 0,
+  'kyc-required': 0,
+  'kyc-pending': 0,
+  'kyc-rejected': 0,
+  ordered: 1,
+  shipped: 2,
+  active: 3,
+  frozen: 3,
 };
 
+const KYC_NOTE: Partial<Record<CardStatus, string>> = {
+  'kyc-required': 'Needed before a card can be issued',
+  'kyc-pending': 'Documents with the issuer · 1–2 business days',
+  'kyc-rejected': 'Not verified — contact support to retry',
+};
+
+/** 5.4 ALLI Card — a Visa linked to the ALLI balance. The issuer is mocked for now. */
 export default function CardScreen() {
-  const { card, cardTransactions, startCardApplication, setCardFrozen, topUpCard } =
+  const { card, cardTransactions, startCardApplication, setCardFrozen, topUpCard, setCardFunding, load } =
     useWalletStore();
+  const user = useAuthStore((s) => s.user);
   const [busy, setBusy] = useState(false);
 
-  const apply = async () => {
+  useEffect(() => {
+    if (!card) void load();
+  }, [card, load]);
+
+  const run = async (fn: () => Promise<void>, ok?: string) => {
     setBusy(true);
     try {
-      await startCardApplication();
-      Alert.alert(
-        'Application started',
-        'You will be handed to the issuing partner to complete identity verification.',
-      );
+      await fn();
+      if (ok) toast(ok, 'ok');
     } catch (error) {
-      Alert.alert('Could not apply', (error as Error).message);
+      toast((error as Error).message, 'error');
     } finally {
       setBusy(false);
     }
   };
 
-  const toggleFreeze = async () => {
-    if (!card) return;
-    setBusy(true);
-    try {
-      await setCardFrozen(!card.frozen);
-    } catch (error) {
-      Alert.alert('Could not update card', (error as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const step = card ? PAIR_STEP[card.status] : 0;
+  const funding = card?.fundingToken ?? 'ALLI';
+  const holder = (user?.displayName ?? user?.email ?? 'ALLI member').toUpperCase().slice(0, 22);
 
-  const topUp = async () => {
-    if (!card) return;
-    setBusy(true);
-    try {
-      await topUpCard(25, card.fundingToken);
-      Alert.alert('Top-up sent', 'Funds land on the card once the transfer confirms.');
-    } catch (error) {
-      Alert.alert('Could not top up', (error as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (!card) {
-    return (
-      <Screen>
-        <SectionHeader title="Visa card" subtitle="Spend your balance anywhere Visa is accepted" />
-        <Card tone="premium" style={styles.card}>
-          <Text variant="body" color={colors.ink2}>
-            A card is issued by a licensed partner, not by Alli. Applying starts identity
-            verification with them; Alli never sees your documents or the full card number.
-          </Text>
-        </Card>
-        <Button label="Apply for a card" size="lg" variant="premium" loading={busy} onPress={() => void apply()} />
-      </Screen>
-    );
-  }
-
-  const usable = card.status === 'active' && !card.frozen;
+  const footer = !card ? (
+    <Button label="Join the waitlist" loading={busy} onPress={() => void run(startCardApplication, 'You are on the waitlist')} />
+  ) : card.status === 'active' ? (
+    <Button
+      label={`Top up ${formatFiat(25)} · fund with ${funding}`}
+      loading={busy}
+      disabled={card.frozen}
+      onPress={() => void run(() => topUpCard(25, funding), 'Top-up sent — lands once it confirms')}
+    />
+  ) : (
+    <Button label={`Continue · fund with ${funding}`} loading={busy} onPress={() => void run(startCardApplication)} />
+  );
 
   return (
-    <Screen>
-      <View style={[styles.plastic, card.frozen && styles.plasticFrozen]}>
-        <Text variant="label" color={colors.onGold}>
-          Alli · Visa
-        </Text>
-        <Text variant="title" color={colors.onGold} style={styles.pan}>
-          •••• •••• •••• {card.last4 ?? '----'}
-        </Text>
-        <View style={styles.plasticFoot}>
-          <Text variant="caption" color={colors.onGold}>
-            Exp {card.expiry ?? '--/--'}
-          </Text>
-          <Text variant="caption" color={colors.onGold}>
-            {formatFiat(card.availableUsd)}
+    <Screen footer={footer}>
+      <ScreenHeader
+        eyebrow="Visa · Roadmap"
+        title="ALLI Card"
+        back
+        right={<Pill label="Coming soon" color={colors.warn} />}
+      />
+
+      <LinearGradient
+        colors={[gradient.primary[1], gradient.primary[0], colors.redDeep]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.plastic, card?.frozen && styles.frozen]}
+        accessibilityLabel={`ALLI Visa card ending ${card?.last4 ?? 'not issued'}`}
+      >
+        <View style={styles.brand}>
+          <Logo size={30} />
+          <Text variant="eyebrow" color={colors.ink}>
+            ALLI Card
           </Text>
         </View>
+        <View style={styles.chip} />
+        <Text style={styles.pan}>••••  ••••  ••••  {card?.last4 ?? '····'}</Text>
+        <View style={styles.foot}>
+          <Text variant="caption" color={colors.ink}>
+            {holder}
+          </Text>
+          <Text style={styles.visa}>VISA</Text>
+        </View>
+      </LinearGradient>
+
+      <View style={styles.stats}>
+        <StatTile label="Available" value={formatFiat(card?.availableUsd ?? 0)} />
+        <StatTile label="Funded by" value={funding} color={colors.redHot} />
       </View>
 
-      <View style={styles.statusRow}>
-        <Pill
-          label={card.frozen ? 'Frozen' : card.status}
-          color={usable ? colors.green : colors.warning}
-          dot
+      <Card style={styles.block}>
+        <Text variant="label" color={colors.inkFaint}>
+          Pair your card
+        </Text>
+        <Steps
+          current={step}
+          steps={[
+            { title: 'Verify identity', detail: card ? KYC_NOTE[card.status] ?? 'KYC approved' : 'With the issuing partner' },
+            { title: 'Choose funding token', detail: 'Spend straight from your balance' },
+            { title: 'Activate card', detail: 'Enter the code on the card mailer' },
+          ]}
         />
-      </View>
-      <Text variant="body" color={colors.ink2} style={styles.statusCopy}>
-        {STATUS_COPY[card.frozen ? 'frozen' : card.status]}
-      </Text>
-
-      <Card style={styles.card}>
-        <Row label="Available to spend" value={formatFiat(card.availableUsd)} valueColor={colors.gold} emphasis />
-        <Row label="Funded by" value={card.fundingToken} />
-        <Row label="Card ID" value={card.id} valueColor={colors.ink2} />
       </Card>
 
-      <View style={styles.actions}>
-        <Button
-          label={`Top up ${formatFiat(25)}`}
-          variant="premium"
-          style={styles.action}
-          loading={busy}
-          disabled={!usable}
-          onPress={() => void topUp()}
-        />
-        <Button
-          label={card.frozen ? 'Unfreeze' : 'Freeze'}
-          variant={card.frozen ? 'secondary' : 'danger'}
-          style={styles.action}
-          loading={busy}
-          onPress={() => void toggleFreeze()}
+      <Segmented
+        options={[
+          { value: 'ALLI', label: 'Fund with ALLI' },
+          { value: 'USDT', label: 'Fund with USDT' },
+        ]}
+        value={funding}
+        onChange={(t) => void run(() => setCardFunding(t))}
+        style={styles.block}
+      />
+
+      <View style={styles.freeze}>
+        <View style={styles.flex}>
+          <Text variant="bodyStrong">Freeze card</Text>
+          <Text variant="caption" color={colors.inkDim}>
+            Block new payments instantly
+          </Text>
+        </View>
+        <Toggle
+          label="Freeze card"
+          value={!!card?.frozen}
+          disabled={!card || busy}
+          onChange={(v) => void run(() => setCardFrozen(v), v ? 'Card frozen' : 'Card unfrozen')}
         />
       </View>
 
-      <SectionHeader title="Card activity" />
-      {cardTransactions.map((tx) => (
-        <Card key={tx.id} tone="muted" style={styles.tx}>
-          <View style={styles.txRow}>
-            <Text variant="bodyStrong">{tx.merchant}</Text>
-            <Text
-              variant="bodyStrong"
-              color={tx.status === 'refunded' ? colors.green : colors.ink}
-            >
-              {tx.status === 'refunded' ? '+' : '−'}
-              {formatFiat(tx.amountUsd)}
-            </Text>
-          </View>
-          <View style={styles.txRow}>
-            <Text variant="caption" color={colors.ink2}>
-              {tx.status}
-            </Text>
-            <Text variant="caption" color={colors.ink2}>
-              {relativeTime(tx.timestamp)}
-            </Text>
-          </View>
-        </Card>
-      ))}
+      {cardTransactions.length ? (
+        <View style={styles.section}>
+          <SectionHeader title="Card activity" />
+          <Card style={styles.tight}>
+            {cardTransactions.map((tx) => (
+              <ListRow
+                key={tx.id}
+                title={tx.merchant}
+                subtitle={`${tx.status} · ${relativeTime(tx.timestamp)}`}
+                value={`${tx.status === 'refunded' ? '+' : '−'}${formatFiat(tx.amountUsd)}`}
+                valueColor={tx.status === 'refunded' ? colors.ok : colors.ink}
+              />
+            ))}
+          </Card>
+        </View>
+      ) : null}
 
-      <Text variant="caption" color={colors.ink3} style={styles.note}>
-        Card details, PIN and statements are served by the issuing partner&apos;s secure component.
-        This screen only shows status and sends instructions through the Alli backend.
+      <Text variant="caption" color={colors.inkFaint} style={styles.section}>
+        Issued by a licensed partner, not by ALLI. Card number, PIN and statements come from the
+        issuer’s secure component, revealed only after a biometric check.
       </Text>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  plastic: {
-    marginTop: spacing.lg,
-    padding: spacing.xl,
-    borderRadius: radius.xl,
-    backgroundColor: colors.gold,
-    gap: spacing.lg,
-    minHeight: 180,
-    justifyContent: 'space-between',
-  },
-  plasticFrozen: { opacity: 0.45 },
-  pan: { letterSpacing: 2 },
-  plasticFoot: { flexDirection: 'row', justifyContent: 'space-between' },
-  statusRow: { marginTop: spacing.lg },
-  statusCopy: { marginTop: spacing.sm, marginBottom: spacing.lg },
-  card: { gap: spacing.xs, marginBottom: spacing.lg },
-  actions: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xl },
-  action: { flex: 1 },
-  tx: { gap: spacing.xs, marginBottom: spacing.sm },
-  txRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md },
-  note: { marginTop: spacing.lg },
+  flex: { flex: 1 },
+  plastic: { borderRadius: radius.lg, padding: 22, gap: 14, minHeight: 200 },
+  frozen: { opacity: 0.45 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  chip: { width: 40, height: 30, borderRadius: 6, backgroundColor: colors.warn, opacity: 0.85 },
+  pan: { fontFamily: fonts.monoMedium, fontSize: 18, color: colors.ink, letterSpacing: 1 },
+  foot: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  visa: { fontFamily: fonts.display, fontSize: 26, color: colors.ink, fontStyle: 'italic' },
+  stats: { flexDirection: 'row', gap: spacing.sm, marginVertical: 14 },
+  block: { gap: spacing.md, marginBottom: 14 },
+  freeze: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xs },
+  section: { marginTop: spacing.xl },
+  tight: { paddingVertical: 6 },
 });
