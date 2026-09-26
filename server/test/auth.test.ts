@@ -32,6 +32,8 @@ describe('sign-in with a provider', () => {
     assert.equal(again.user.id, first.user.id, 'same account');
     assert.equal(again.user.displayName, 'Ada', 'the first display name sticks');
     assert.notEqual(again.token, first.token, 'a fresh session each time');
+    assert.equal(first.isNew, true, 'the sign-in that created the account is flagged');
+    assert.equal(again.isNew, false);
 
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM identities');
     assert.equal(rows[0]!.n, 1);

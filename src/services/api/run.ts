@@ -6,6 +6,7 @@ import { creditStepSamples } from '@/features/run/steps';
 import type { RunEntitlement, RunSession, RunSummary } from '@/features/run/types';
 import { dayKey } from '@/utils/time';
 import { delay, request } from './client';
+import { payIntent } from './payments';
 import { mockQuests } from './mockQuests';
 import { mockStars } from './mockStars';
 
@@ -64,6 +65,8 @@ export interface RunApi {
   buyRuns(count: number, currency: PayCurrency): Promise<RunEntitlement>;
   /** Renews the membership for another month and grants its run credits. */
   renewMembership(currency: PayCurrency): Promise<RunEntitlement>;
+  /** Buys a shoe upgrade (USDT) and returns the profile with the new tier. */
+  upgradeShoe(tier: Exclude<ShoeTier, 'leather'>, day: string): Promise<RunProfile>;
 }
 
 const live: RunApi = {
@@ -105,11 +108,20 @@ const live: RunApi = {
       body: { stars, toAddress, day: dayKey() },
     }),
 
-  buyRuns: (count, currency) =>
-    request('/v1/run/credits', { method: 'POST', body: { runs: count, currency } }),
+  // Purchases are payment intents: quote → pay on chain → the server's watcher grants the credits.
+  buyRuns: async (count, currency) => {
+    await payIntent({ kind: 'runs', runs: count, currency });
+    return request('/v1/run/entitlement');
+  },
 
-  renewMembership: (currency) =>
-    request('/v1/run/membership/renew', { method: 'POST', body: { currency } }),
+  renewMembership: async (currency) => {
+    await payIntent({ kind: 'membership', currency });
+    return request('/v1/run/entitlement');
+  },
+  upgradeShoe: async (tier, day) => {
+    await payIntent({ kind: 'shoe', tier, currency: 'USDT' });
+    return request(`/v1/run/profile?day=${encodeURIComponent(day)}`);
+  },
 };
 
 let mockProfile: RunProfile = {
@@ -195,6 +207,11 @@ const mock: RunApi = {
       runsThisMonth: mockEntitlement.runsThisMonth + 1,
     };
     return delay(summary, 700);
+  },
+
+  async upgradeShoe(tier) {
+    mockProfile = { ...mockProfile, shoeTier: tier };
+    return delay({ ...mockProfile, starsBalance: mockStars.balance() }, 900);
   },
 
   async exchangeStars(stars) {

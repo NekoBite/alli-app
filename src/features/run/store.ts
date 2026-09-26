@@ -4,7 +4,7 @@ import { runApi } from '@/services/api';
 import { dayKey } from '@/utils/time';
 import { checkCanStart, checkPurchase, RUN_CREDIT_RULES, type PayCurrency } from './credits';
 import { calculateReward } from './rewards';
-import { DEFAULT_SHOE_TIER } from './shoes';
+import { DEFAULT_SHOE_TIER, type ShoeTier } from './shoes';
 import type { RewardBreakdown, RunEntitlement, RunSession, RunSummary } from './types';
 import type { RunProfile } from '@/services/api';
 
@@ -63,6 +63,9 @@ type RunState = {
   /** Buys extra run credits, paid in ALLI or USDT. */
   buyRuns: (count: number, currency: PayCurrency) => Promise<void>;
   renewMembership: (currency: PayCurrency) => Promise<void>;
+  /** Buys a shoe upgrade; the new tier multiplies quests paid from now on. */
+  upgradeShoe: (tier: Exclude<ShoeTier, 'leather'>) => Promise<void>;
+  upgrading: boolean;
   /** Whether a run may be started — credits, in a form the button can explain. */
   canStart: () => { ok: boolean; reason?: string };
 };
@@ -75,6 +78,7 @@ export const useRunStore = create<RunState>((set, get) => ({
   exchanging: false,
   buying: false,
   renewing: false,
+  upgrading: false,
 
   async refresh() {
     set({ loading: true, error: undefined });
@@ -168,6 +172,16 @@ export const useRunStore = create<RunState>((set, get) => ({
       });
     } catch (error) {
       set({ renewing: false, error: (error as Error).message });
+      throw error;
+    }
+  },
+
+  async upgradeShoe(tier) {
+    set({ upgrading: true, error: undefined });
+    try {
+      set({ profile: await runApi.upgradeShoe(tier, dayKey()), upgrading: false });
+    } catch (error) {
+      set({ upgrading: false, error: (error as Error).message });
       throw error;
     }
   },

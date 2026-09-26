@@ -15,10 +15,11 @@ import {
   SectionHeader,
   StatTile,
   Text,
+  toast,
 } from '@/components';
 import { weekGoals, type DayGoal } from '@/features/run/goals';
 import { questProgress, REWARD_RULES, starsToAlli } from '@/features/run/rewards';
-import { SHOE_ORDER, SHOES, shoeFor, type ShoeTier } from '@/features/run/shoes';
+import { SHOE_ORDER, SHOE_PRICE_USDT, SHOES, shoeFor, type ShoeTier } from '@/features/run/shoes';
 import { useRunStore } from '@/features/run/store';
 import type { RunSummary } from '@/features/run/types';
 import { colors, gradient, radius, spacing } from '@/theme';
@@ -164,12 +165,28 @@ export default function RunScreen() {
 
 function ShoeTile({ tier, owned, current }: { tier: ShoeTier; owned: boolean; current: boolean }) {
   const shoe = SHOES[tier];
+  const upgradeShoe = useRunStore((s) => s.upgradeShoe);
+  const price = SHOE_PRICE_USDT[tier];
+  const buy = async () => {
+    try {
+      await upgradeShoe(tier as Exclude<ShoeTier, 'leather'>);
+      toast(`${shoe.name} shoe is yours — ×${shoe.rewardMultiplier.toFixed(1)} from the next quest`, 'ok');
+    } catch (error) {
+      toast((error as Error).message, 'error');
+    }
+  };
   const detail = () =>
     Alert.alert(
       `${shoe.name} NFT shoe`,
       `${shoe.blurb}\n\n×${shoe.rewardMultiplier.toFixed(1)} on the daily quest.${
-        owned ? '' : '\n\nNot owned yet. Upgrades are sold as NFTs on BNB Smart Chain.'
+        owned ? '' : '\n\nNot owned yet. Upgrades are NFTs on BNB Smart Chain, paid in USDT.'
       }`,
+      !owned && price
+        ? [
+            { text: 'Not now', style: 'cancel' },
+            { text: `Upgrade · ${price} USDT`, onPress: () => void buy() },
+          ]
+        : undefined,
     );
   return (
     <Pressable

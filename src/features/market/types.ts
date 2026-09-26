@@ -1,4 +1,3 @@
-import type { TokenSymbol } from '@/services/chain';
 
 export type ProductCategory = 'gear' | 'apparel' | 'wellness' | 'home';
 
@@ -11,8 +10,6 @@ export type Product = {
   priceUsd: number;
   /** Price in ALLI. Below the USD equivalent: paying in ALLI is the discount. */
   priceAlli: number;
-  /** Colour token for the placeholder tile until product photography exists. */
-  accent: string;
   inStock: boolean;
   /** Where the seller ships to. Empty = worldwide. */
   shipsTo: string[];
@@ -36,7 +33,8 @@ export type CartLine = {
   quantity: number;
 };
 
-export type PaymentMethod = Extract<TokenSymbol, 'ALLI' | 'USDT'>;
+/** Spelled out rather than derived from the chain config: the server shares this file and cannot import the app's '@/' modules. */
+export type PaymentMethod = 'ALLI' | 'USDT';
 
 export type ShippingAddress = {
   fullName: string;

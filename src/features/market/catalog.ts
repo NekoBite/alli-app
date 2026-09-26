@@ -1,4 +1,3 @@
-import { colors } from '@/theme';
 import type { Product } from './types';
 
 /**
@@ -14,7 +13,6 @@ export const PRODUCTS: Product[] = [
     blurb: 'Lightweight, packable, sweat-wicking band. Made from recycled fibre.',
     priceUsd: 28,
     priceAlli: 2_200,
-    accent: colors.redHot,
     inStock: true,
     shipsTo: [],
   },
@@ -25,7 +23,6 @@ export const PRODUCTS: Product[] = [
     blurb: 'Double-walled steel. Keeps cold for 24 hours.',
     priceUsd: 34,
     priceAlli: 2_700,
-    accent: colors.warn,
     inStock: true,
     shipsTo: [],
   },
@@ -36,7 +33,6 @@ export const PRODUCTS: Product[] = [
     blurb: 'Breathable recycled-poly running tee with the ALLI mark. Limited Genesis run of 500.',
     priceUsd: 32,
     priceAlli: 2_500,
-    accent: colors.ok,
     inStock: true,
     shipsTo: [],
     variants: [
@@ -58,7 +54,6 @@ export const PRODUCTS: Product[] = [
     blurb: 'Three resistance levels for post-run mobility work.',
     priceUsd: 22,
     priceAlli: 1_800,
-    accent: colors.warn,
     inStock: true,
     shipsTo: [],
   },
@@ -69,7 +64,6 @@ export const PRODUCTS: Product[] = [
     blurb: 'Plant the physical counterpart of a tree in your garden. Includes soil pods.',
     priceUsd: 45,
     priceAlli: 3_400,
-    accent: colors.redDeep,
     inStock: false,
     shipsTo: ['TH', 'SG', 'MY'],
   },
@@ -80,7 +74,6 @@ export const PRODUCTS: Product[] = [
     blurb: 'Blister-resistant merino blend, cushioned heel.',
     priceUsd: 26,
     priceAlli: 2_050,
-    accent: colors.inkDim,
     inStock: true,
     shipsTo: [],
     variants: [
