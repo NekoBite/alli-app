@@ -46,6 +46,16 @@ export const SHOES: Record<ShoeTier, Shoe> = {
   },
 };
 
+/**
+ * What an upgrade to each tier costs, in USDT. Placeholders the server owns (it quotes the binding
+ * price in the payment intent); the referral example in docs/referral-programs.md uses 100 USDT
+ * for Silver. Leather is free and never sold.
+ */
+export const SHOE_PRICE_USDT: Partial<Record<ShoeTier, number>> = {
+  silver: 100,
+  gold: 300,
+};
+
 /** Tiers in upgrade order, for pickers and comparisons. */
 export const SHOE_ORDER: ShoeTier[] = ['leather', 'silver', 'gold'];
 

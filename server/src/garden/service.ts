@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { consumeSeedIntent, paymentsConfig } from '../payments/service.ts';
 
 import { pool, transaction, type Db } from '../db/pool.ts';
 import { ApiError } from '../lib/errors.ts';
@@ -128,12 +129,21 @@ export async function getGarden(userId: string, now: number = Date.now()): Promi
   }));
 }
 
-export async function plant(userId: string, seedId: string, now: number = Date.now()): Promise<Plot> {
+export async function plant(
+  userId: string,
+  seedId: string,
+  now: number = Date.now(),
+  intentId?: string,
+): Promise<Plot> {
   const seed = findSeed(seedId);
   if (!seed) throw ApiError.badRequest('unknown_seed', 'That seed is not in the catalogue.');
   return withGarden(userId, now, async (db) => {
-    // TODO: charge seed.price in seed.currency (ALLI or USDT). Payment waits on
-    // the custody decision (README §1); until then planting is free.
+    // Once payments are open a planting spends one confirmed `seed` payment for this seed
+    // (POST /v1/payments/intents, then PaymentRouter.pay). Before that, planting stays free.
+    if (paymentsConfig()) {
+      if (!intentId) throw new ApiError(402, 'payment_required', `Pay for the ${seed.name} seed first.`);
+      await consumeSeedIntent(db, userId, intentId, seed.id);
+    }
     const plot = newPlot(randomUUID(), seed, now);
     await db.query(
       `INSERT INTO plots (id, user_id, seed_id, planted_at, state)

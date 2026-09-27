@@ -2,6 +2,7 @@ import { Contract, JsonRpcProvider, Wallet, parseUnits } from 'ethers';
 
 import { env } from '../config/env.ts';
 import { ApiError } from '../lib/errors.ts';
+import { signVoucher } from './signer.ts';
 
 const ERC20_TRANSFER_ABI = [
   'function transfer(address to, uint256 value) returns (bool)',
@@ -67,6 +68,9 @@ export async function sendAlli(to: string, amount: string): Promise<{ hash: stri
   const decimals = Number(await token.decimals!());
   const value = parseUnits(amount, decimals);
 
+  // The RewardClaim float lives in the contract, so the relayer wallet's balance is irrelevant there.
+  if (env.REWARD_CLAIM_ADDRESS) return claimThroughContract(to, value);
+
   const balance = (await token.balanceOf!(await (await connect()).wallet.getAddress())) as bigint;
   if (balance < value) {
     throw ApiError.unavailable(
@@ -76,5 +80,38 @@ export async function sendAlli(to: string, amount: string): Promise<{ hash: stri
   }
 
   const tx = await token.transfer!(to, value);
+  return { hash: tx.hash as string };
+}
+
+const REWARD_CLAIM_ABI = [
+  'function nonceOf(address user) view returns (uint256)',
+  'function remainingToday() view returns (uint256)',
+  'function claimFor(address user, uint256 amount, uint256 nonce, uint256 deadline, bytes signature)',
+];
+
+/**
+ * The RewardClaim path (contracts/src/RewardClaim.sol): sign a one-time voucher and submit it with
+ * claimFor, so the member pays no gas and the contract's daily cap and nonce rules apply on top of
+ * the server's. The float lives in the contract, not in the relayer wallet.
+ *
+ * Exchanges for one user are serialised by openExchange's row lock, and the route is rate-limited,
+ * so two vouchers for the same nonce are not issued in practice. A voucher that still reverts on
+ * chain (nonce race, cap reached between the check and the block) is a pending redemption whose
+ * transaction failed: the reconciler's job, like any other failed transfer.
+ */
+async function claimThroughContract(to: string, value: bigint): Promise<{ hash: string }> {
+  const { wallet } = connect();
+  const claim = new Contract(env.REWARD_CLAIM_ADDRESS!, REWARD_CLAIM_ABI, wallet);
+  const remaining = (await claim.remainingToday!()) as bigint;
+  if (remaining < value) {
+    throw ApiError.unavailable(
+      'daily_cap_reached',
+      "Today's exchange limit has been reached. Your stars have not been deducted — try again tomorrow.",
+    );
+  }
+  const nonce = (await claim.nonceOf!(to)) as bigint;
+  const deadline = Math.floor(Date.now() / 1000) + 600;
+  const signature = await signVoucher({ user: to, amount: value, nonce, deadline });
+  const tx = await claim.claimFor!(to, value, nonce, deadline, signature);
   return { hash: tx.hash as string };
 }

@@ -1,4 +1,3 @@
-import type { TokenSymbol } from '@/services/chain';
 
 export type ProductCategory = 'gear' | 'apparel' | 'wellness' | 'home';
 
@@ -11,19 +10,31 @@ export type Product = {
   priceUsd: number;
   /** Price in ALLI. Below the USD equivalent: paying in ALLI is the discount. */
   priceAlli: number;
-  /** Colour token for the placeholder tile until product photography exists. */
-  accent: string;
   inStock: boolean;
   /** Where the seller ships to. Empty = worldwide. */
   shipsTo: string[];
+  /** Sizes or colours. A product with variants needs one picked before it goes in the cart. */
+  variants?: ProductVariant[];
+  /** Headline campaign for the featured banner (4.1). */
+  featured?: { eyebrow: string; title: string; blurb: string };
+};
+
+export type ProductVariant = {
+  id: string;
+  label: string;
+  /** Units left. 0 = sold out; the chip stays visible but cannot be picked. */
+  stock: number;
 };
 
 export type CartLine = {
   productId: string;
+  /** Required when the product has variants. */
+  variantId?: string;
   quantity: number;
 };
 
-export type PaymentMethod = Extract<TokenSymbol, 'ALLI' | 'USDT'>;
+/** Spelled out rather than derived from the chain config: the server shares this file and cannot import the app's '@/' modules. */
+export type PaymentMethod = 'ALLI' | 'USDT';
 
 export type ShippingAddress = {
   fullName: string;
@@ -42,8 +53,14 @@ export type Order = {
   createdAt: number;
   lines: CartLine[];
   method: PaymentMethod;
-  /** Charged amount in the chosen token. */
+  /** Charged amount in the chosen token, shipping included. */
   total: number;
+  /** Shipping, in the chosen token. */
+  shipping?: number;
+  /** Stars the stars-back promo credits once the order is paid. */
+  starsBack?: number;
+  /** Human-facing order number, e.g. ALLI-20931. */
+  number?: string;
   status: OrderStatus;
   /** On-chain payment, once settled. */
   txHash?: string;

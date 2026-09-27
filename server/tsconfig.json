@@ -38,6 +38,13 @@
     "../src/features/garden/care.ts",
     "../src/features/quests/types.ts",
     "../src/features/quests/rules.ts",
-    "../src/features/quests/quests.ts"
+    "../src/features/quests/quests.ts",
+    "../src/features/run/credits.ts",
+    "../src/features/market/types.ts",
+    "../src/features/market/catalog.ts",
+    "../src/features/market/rules.ts",
+    "../src/features/referrals/types.ts",
+    "../src/features/referrals/rules.ts",
+    "../src/services/chain/eip712.ts"
   ]
 }

@@ -15,16 +15,26 @@ export async function setupDb(): Promise<void> {
   // the foreign keys honest.
   await pool.query(
     `TRUNCATE users, auth_codes, sessions, identities, runs, star_ledger, redemptions,
-             plots, gardens, quest_contributions, quest_weeks, quest_payouts CASCADE`,
+             plots, gardens, quest_contributions, quest_weeks, quest_payouts,
+             credit_ledger, memberships, payment_intents, orders, referral_codes,
+             sponsorships, commissions CASCADE`,
   );
 }
 
-export async function createUser(email = `${randomUUID()}@example.com`): Promise<string> {
+/**
+ * A user who can run: every recorded run spends a credit (docs/architecture.md §2), so test users
+ * start with a stack of them unless a test asks for none.
+ */
+export async function createUser(email = `${randomUUID()}@example.com`, runCredits = 100): Promise<string> {
   const { rows } = await pool.query<{ id: string }>(
     'INSERT INTO users (email) VALUES ($1) RETURNING id',
     [email],
   );
-  return rows[0]!.id;
+  const id = rows[0]!.id;
+  if (runCredits > 0) {
+    await pool.query(`INSERT INTO credit_ledger (user_id, delta, reason) VALUES ($1, $2, 'adjustment')`, [id, runCredits]);
+  }
+  return id;
 }
 
 /**

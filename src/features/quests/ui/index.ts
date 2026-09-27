@@ -1,1 +1,1 @@
-export { WeeklyQuestCard, WeeklyQuestStrip } from './WeeklyQuestCard';
+export { WeeklyQuestStrip } from './WeeklyQuestStrip';

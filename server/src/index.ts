@@ -1,4 +1,5 @@
 import { buildApp } from './app.ts';
+import { startPaymentWatcher } from './chain/watcher.ts';
 import { env } from './config/env.ts';
 import { close } from './db/pool.ts';
 import { migrate } from './db/migrate.ts';
@@ -10,10 +11,13 @@ async function main(): Promise<void> {
 
   const app = await buildApp();
   await app.listen({ port: env.PORT, host: env.HOST });
+  // Fulfils purchases as their `Paid` events land. A no-op until the router and RPC are configured.
+  const stopWatcher = startPaymentWatcher(app.log);
 
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, 'shutting down');
     // Close the server first so in-flight requests finish before the pool goes.
+    stopWatcher();
     await app.close();
     await close();
     process.exit(0);

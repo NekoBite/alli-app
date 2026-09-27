@@ -27,6 +27,29 @@ export const RUN_CREDIT_RULES = {
   maxExtraRunsPerMonth: 300,
 } as const;
 
+export type PayCurrency = 'ALLI' | 'USDT';
+
+/**
+ * One-off run packs (wireframe 2.5). The ALLI prices are the wireframe's placeholders — bigger
+ * packs are cheaper per run — and, like everything in this file, belong to the server, which
+ * quotes the binding price in the payment intent. USDT prices are the per-run price times the pack.
+ */
+export const RUN_PACKS = [
+  { runs: 5, alli: 50 },
+  { runs: 10, alli: 90 },
+  { runs: 30, alli: 240, bestValue: true },
+] as const;
+
+export type RunPack = (typeof RUN_PACKS)[number];
+
+/** Membership renewal in ALLI (wireframe 2.5, "Renew early · 250 ALLI"). Placeholder, server-owned. */
+export const MEMBERSHIP_PRICE_ALLI = 250;
+
+/** What a pack costs in the chosen currency. */
+export function packPrice(pack: RunPack, currency: PayCurrency): number {
+  return currency === 'ALLI' ? pack.alli : extraRunsCost(pack.runs);
+}
+
 /** USDT cost of buying `count` extra credits. */
 export function extraRunsCost(count: number): number {
   const runs = Math.max(0, Math.floor(count));

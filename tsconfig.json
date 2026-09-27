@@ -18,6 +18,8 @@
   ],
   "exclude": [
     "node_modules",
-    "server"
+    "server",
+    "contracts",
+    "tools"
   ]
 }

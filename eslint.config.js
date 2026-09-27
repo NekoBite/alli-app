@@ -23,6 +23,8 @@ module.exports = [
       // deps, a CLI where console output is the point — not part of the app or
       // server build, so the app's lint rules do not apply.
       'tools/',
+      // Solidity package with its own toolchain (Hardhat), config and CI job.
+      'contracts/',
     ],
   },
 

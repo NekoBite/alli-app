@@ -73,8 +73,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request) => {
       const { address } = WalletSchema.parse(request.body);
       const user = currentUser(request);
-      await setWalletAddress(user.id, address);
-      return { ...user, walletAddress: address };
+      const walletAddress = await setWalletAddress(user.id, address);
+      return { ...user, walletAddress };
     },
   });
 }

@@ -3,9 +3,9 @@ import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { Button, Card, Pill, Screen, Text } from '@/components';
+import { Button, Card, Pill, Screen, ScreenHeader, StatTile, Text } from '@/components';
 import { colors, radius, spacing } from '@/theme';
-import { MINIGAMES } from '../rules';
+import { MINIGAMES, PRACTICES } from '../rules';
 import type { MinigameId } from '../types';
 import type { GameProps } from './types';
 
@@ -53,6 +53,14 @@ export function MinigameShell({ game, Game, onWon }: Props) {
     [],
   );
 
+  const [secondsLeft, setSecondsLeft] = useState(Math.round(rule.durationMs / 1000));
+  useEffect(() => {
+    if (phase.kind !== 'playing') return;
+    const deadline = phase.deadline;
+    const t = setInterval(() => setSecondsLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000))), 250);
+    return () => clearInterval(t);
+  }, [phase]);
+
   const barStyle = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
 
   const onLayout = (event: LayoutChangeEvent) => {
@@ -78,13 +86,44 @@ export function MinigameShell({ game, Game, onWon }: Props) {
     }
   };
 
+  const reward = rule.grants.compost
+    ? '+ compost for your heap'
+    : rule.grants.practice
+      ? `+1 practice · ${PRACTICES[rule.grants.practice].label}`
+      : '—';
+
   return (
-    <Screen scroll={false}>
-      <View style={styles.head}>
-        <Text variant="title">{rule.label}</Text>
-        <Text variant="caption" color={colors.ink2}>
-          {rule.blurb}
-        </Text>
+    <Screen
+      scroll={false}
+      footer={
+        phase.kind === 'intro' ? (
+          <Button label="Start round" onPress={start} />
+        ) : phase.kind === 'result' ? (
+          <View style={styles.actions}>
+            {!phase.success ? (
+              <Button label="Try again" variant="secondary" onPress={() => setPhase({ kind: 'intro' })} style={styles.action} />
+            ) : null}
+            <Button
+              label={phase.success ? 'Collect' : 'Back'}
+              loading={saving}
+              onPress={() => void done()}
+              style={styles.action}
+            />
+          </View>
+        ) : (
+          <Button label="Give up" variant="secondary" onPress={() => finish(false)} />
+        )
+      }
+    >
+      <ScreenHeader
+        eyebrow={`Minigame · ${Math.round(rule.durationMs / 1000)} s`}
+        title={rule.label}
+        back
+      />
+
+      <View style={styles.stats}>
+        <StatTile label="Time" value={phase.kind === 'playing' ? `0:${String(secondsLeft).padStart(2, '0')}` : `0:${String(Math.round(rule.durationMs / 1000)).padStart(2, '0')}`} color={colors.redHot} />
+        <StatTile label="Status" value={phase.kind === 'result' ? (phase.success ? 'Won' : 'Lost') : phase.kind === 'playing' ? 'Live' : 'Ready'} />
       </View>
 
       <View style={styles.track}>
@@ -98,10 +137,12 @@ export function MinigameShell({ game, Game, onWon }: Props) {
 
         {phase.kind === 'intro' ? (
           <View style={styles.overlay}>
-            <Text variant="body" color={colors.ink2} center>
-              {Math.round(rule.durationMs / 1000)} seconds on the clock.
+            <Text variant="heading" center>
+              {rule.label}
             </Text>
-            <Button label="Start" size="lg" onPress={start} />
+            <Text variant="body" color={colors.inkDim} center>
+              {rule.blurb}
+            </Text>
           </View>
         ) : null}
 
@@ -109,11 +150,10 @@ export function MinigameShell({ game, Game, onWon }: Props) {
           <View style={styles.overlay}>
             <Pill
               label={phase.success ? 'Done' : 'Out of time'}
-              color={phase.success ? colors.green : colors.warning}
-              dot
+              color={phase.success ? colors.ok : colors.warn}
             />
             <Card style={styles.lesson} tone="muted">
-              <Text variant="label" color={colors.teal}>
+              <Text variant="label" color={colors.ok}>
                 Why it matters
               </Text>
               <Text variant="body">{rule.lesson}</Text>
@@ -123,39 +163,36 @@ export function MinigameShell({ game, Game, onWon }: Props) {
                 {saveError}
               </Text>
             ) : null}
-            <View style={styles.actions}>
-              {!phase.success ? (
-                <Button label="Try again" variant="secondary" onPress={() => setPhase({ kind: 'intro' })} style={styles.action} />
-              ) : null}
-              <Button
-                label={phase.success ? 'Collect' : 'Back'}
-                loading={saving}
-                onPress={() => void done()}
-                style={styles.action}
-              />
-            </View>
           </View>
         ) : null}
       </View>
+
+      <Card tone="hero" style={styles.pays}>
+        <Text variant="label" color={colors.redHot}>
+          This round pays
+        </Text>
+        <Text variant="bodyStrong">{reward}</Text>
+      </Card>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  head: { paddingVertical: spacing.lg, gap: spacing.xs },
+  stats: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  pays: { gap: 6, marginTop: spacing.md },
   track: {
     height: 8,
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.track,
     borderRadius: radius.pill,
     overflow: 'hidden',
     marginBottom: spacing.md,
   },
-  fill: { height: '100%', backgroundColor: colors.green, borderRadius: radius.pill },
+  fill: { height: '100%', backgroundColor: colors.redHot, borderRadius: radius.pill },
   field: {
     flex: 1,
     borderRadius: radius.lg,
     overflow: 'hidden',
-    backgroundColor: colors.surface,
+    backgroundColor: colors.raised,
     borderWidth: 1,
     borderColor: colors.line,
   },
@@ -169,7 +206,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.md,
     padding: spacing.lg,
-    backgroundColor: 'rgba(10, 15, 13, 0.85)',
+    backgroundColor: 'rgba(10, 6, 5, 0.85)',
   },
   lesson: { gap: spacing.xs, width: '100%' },
   actions: { flexDirection: 'row', gap: spacing.sm, width: '100%' },

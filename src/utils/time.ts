@@ -56,3 +56,13 @@ export function formatDate(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return '—';
   return new Date(ms).toLocaleDateString();
 }
+
+/** ISO-8601 week number (1–53) of a UTC instant. */
+export function isoWeek(ms: number): number {
+  const d = new Date(ms);
+  const day = d.getUTCDay() || 7;
+  // Thursday of this week decides the year the week belongs to.
+  const thursday = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 4 - day);
+  const yearStart = Date.UTC(new Date(thursday).getUTCFullYear(), 0, 1);
+  return Math.ceil(((thursday - yearStart) / 86_400_000 + 1) / 7);
+}

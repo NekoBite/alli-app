@@ -1,160 +1,208 @@
-import { useState } from 'react';
-import { Alert, StyleSheet, TextInput, View } from 'react-native';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Button, Card, Pill, Row, Screen, Text } from '@/components';
+import {
+  Button,
+  Card,
+  ConfirmSheet,
+  Pill,
+  ProgressBar,
+  Screen,
+  ScreenHeader,
+  SectionHeader,
+  Segmented,
+  Text,
+  toast,
+} from '@/components';
 import {
   checkPurchase,
-  extraRunsCost,
-  membershipRemainingMs,
-  remainingPurchasableRuns,
-  RUN_CREDIT_RULES,
+  MEMBERSHIP_PRICE_ALLI,
+  packPrice,
+  RUN_PACKS,
+  type PayCurrency,
+  type RunPack,
 } from '@/features/run/credits';
 import { useRunStore } from '@/features/run/store';
-import { colors, radius, spacing, type } from '@/theme';
+import { useWalletStore } from '@/features/wallet/store';
+import { colors, radius, spacing } from '@/theme';
 import { formatToken } from '@/utils/format';
-import { countdown, formatDate } from '@/utils/time';
+import { formatDate } from '@/utils/time';
 
+/** 2.5 Run credits — membership plus one-off packs, paid in ALLI or BSC USDT. */
 export default function RunCreditsScreen() {
   const { entitlement, buying, renewing, buyRuns, renewMembership } = useRunStore();
-  const [count, setCount] = useState('');
+  const balanceOf = useWalletStore((s) => s.balanceOf);
+  const walletLoaded = useWalletStore((s) => s.balances.length > 0);
+  const loadWallet = useWalletStore((s) => s.load);
+  useEffect(() => {
+    if (!walletLoaded) void loadWallet();
+  }, [walletLoaded, loadWallet]);
+  const [selected, setSelected] = useState<RunPack>(RUN_PACKS[1]);
+  const [currency, setCurrency] = useState<PayCurrency>('ALLI');
+  const [confirm, setConfirm] = useState<'pack' | 'renew' | null>(null);
 
-  const parsed = Number(count);
-  const runs = Number.isInteger(parsed) ? parsed : NaN;
-  const check = Number.isNaN(runs) ? { ok: false } : checkPurchase(runs, entitlement);
-  const remaining = remainingPurchasableRuns(entitlement.extraRunsBoughtThisMonth);
   const membership = entitlement.membership;
   const active = membership.status === 'active';
+  const used = Math.min(entitlement.runsThisMonth, membership.runsPerRenewal);
+  const price = packPrice(selected, currency);
+  const renewPrice = currency === 'ALLI' ? MEMBERSHIP_PRICE_ALLI : membership.priceUsdt;
+  const balance = Number(balanceOf(currency)?.formatted ?? 0);
+  const check = checkPurchase(selected.runs, entitlement);
+  const shortOf = (amount: number) => balance < amount;
 
-  const buy = async () => {
+  const onBuy = async () => {
     try {
-      await buyRuns(runs);
-      setCount('');
-      Alert.alert('Runs added', `${runs} run${runs === 1 ? '' : 's'} added to your balance.`);
+      if (confirm === 'renew') {
+        await renewMembership(currency);
+        toast(`Membership renewed · +${membership.runsPerRenewal} runs`, 'ok');
+      } else {
+        await buyRuns(selected.runs, currency);
+        toast(`${selected.runs} runs added`, 'ok');
+      }
+      setConfirm(null);
+      router.back();
     } catch (error) {
-      Alert.alert('Could not buy runs', (error as Error).message);
+      setConfirm(null);
+      toast((error as Error).message, 'error');
     }
   };
 
-  const renew = async () => {
-    try {
-      await renewMembership();
-      Alert.alert(
-        'Membership renewed',
-        `${RUN_CREDIT_RULES.runsPerRenewal} run credits added to your balance.`,
-      );
-    } catch (error) {
-      Alert.alert('Could not renew', (error as Error).message);
-    }
-  };
+  const cta = shortOf(price)
+    ? { label: `Top up ${currency}`, onPress: () => router.push('/wallet/receive') }
+    : { label: `Buy ${selected.runs} runs · ${formatToken(price)} ${currency}`, onPress: () => setConfirm('pack') };
 
   return (
-    <Screen>
-      <View style={styles.hero}>
-        <Text variant="label" color={colors.ink2}>
-          Runs left
+    <Screen
+      footer={
+        <>
+          <Button label={cta.label} onPress={cta.onPress} disabled={!check.ok && !shortOf(price)} />
+          {!check.ok && check.reason ? (
+            <Text variant="caption" color={colors.warn} center>
+              {check.reason}
+            </Text>
+          ) : null}
+        </>
+      }
+    >
+      <ScreenHeader eyebrow="1 run = 1 credit" title="Run credits" back />
+
+      <Card tone="hero" style={styles.gap}>
+        <View style={styles.rowBetween}>
+          <Text variant="label" color={colors.redHot}>
+            Monthly membership
+          </Text>
+          <Pill
+            label={active ? 'Active' : membership.status === 'expired' ? 'Expired' : 'None'}
+            color={active ? colors.ok : colors.warn}
+          />
+        </View>
+        <Text variant="heading">{membership.runsPerRenewal} runs / month</Text>
+        <Text variant="caption" color={colors.inkDim}>
+          {membership.activeUntil
+            ? `${active ? 'Renews' : 'Lapsed'} ${formatDate(membership.activeUntil)} · `
+            : ''}
+          {used} of {membership.runsPerRenewal} used · {entitlement.runsLeft} left
         </Text>
-        <Text variant="hero" color={entitlement.runsLeft > 0 ? colors.green : colors.warning}>
-          {entitlement.runsLeft}
+        <ProgressBar progress={used / membership.runsPerRenewal} height={4} />
+        <Button
+          label={`${active ? 'Renew early' : 'Renew'} · ${formatToken(renewPrice)} ${currency}`}
+          variant="secondary"
+          loading={renewing}
+          onPress={() => (shortOf(renewPrice) ? router.push('/wallet/receive') : setConfirm('renew'))}
+        />
+      </Card>
+
+      <View style={styles.section}>
+        <SectionHeader title="Buy runs outright" />
+        <View style={styles.packs}>
+          {RUN_PACKS.map((pack) => {
+            const on = pack.runs === selected.runs;
+            const p = packPrice(pack, currency);
+            return (
+              <Pressable
+                key={pack.runs}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: on }}
+                onPress={() => setSelected(pack)}
+                style={[styles.pack, on && styles.packOn]}
+              >
+                <View style={[styles.radio, on && styles.radioOn]}>{on ? <View style={styles.radioDot} /> : null}</View>
+                <View style={styles.flex}>
+                  <View style={styles.packTitle}>
+                    <Text variant="bodyStrong">{pack.runs} runs</Text>
+                    {'bestValue' in pack && pack.bestValue ? <Pill label="Best value" color={colors.ok} /> : null}
+                  </View>
+                  <Text variant="caption" color={colors.inkDim}>
+                    {formatToken(p / pack.runs)} {currency} / run
+                  </Text>
+                </View>
+                <Text variant="figure" style={styles.packPrice} color={shortOf(p) ? colors.warn : colors.ink}>
+                  {formatToken(p)} {currency}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      <Segmented
+        options={[
+          { value: 'ALLI', label: 'Pay with ALLI' },
+          { value: 'USDT', label: 'Pay with USDT' },
+        ]}
+        value={currency}
+        onChange={setCurrency}
+      />
+      <View style={styles.balance}>
+        <Text variant="caption" color={colors.inkDim}>
+          Wallet balance
         </Text>
-        <Text variant="caption" color={colors.ink2}>
-          Credits never expire · {entitlement.runsThisMonth} run
-          {entitlement.runsThisMonth === 1 ? '' : 's'} recorded this month
+        <Text variant="monoStrong" color={shortOf(price) ? colors.warn : colors.ink}>
+          {formatToken(balance)} {currency}
         </Text>
       </View>
 
-      <Card style={styles.card}>
-        <Text variant="heading">Buy extra runs</Text>
-        <Text variant="caption" color={colors.ink2}>
-          {formatToken(RUN_CREDIT_RULES.extraRunPriceUsdt, 'USDT')} per run. You can buy{' '}
-          {remaining} more this month ({entitlement.extraRunsBoughtThisMonth} of{' '}
-          {RUN_CREDIT_RULES.maxExtraRunsPerMonth} bought).
-        </Text>
-
-        <TextInput
-          value={count}
-          onChangeText={setCount}
-          placeholder="Runs to buy"
-          placeholderTextColor={colors.ink3}
-          keyboardType="number-pad"
-          style={styles.input}
-          accessibilityLabel="Runs to buy"
-        />
-        <Row
-          label="Total"
-          value={formatToken(extraRunsCost(Number.isNaN(runs) ? 0 : runs), 'USDT')}
-          valueColor={colors.gold}
-          emphasis
-        />
-        {count.length > 0 && check.reason ? (
-          <Text variant="caption" color={colors.danger}>
-            {check.reason}
-          </Text>
-        ) : null}
-
-        <Button
-          label="Buy runs"
-          size="lg"
-          loading={buying}
-          disabled={!check.ok}
-          onPress={() => void buy()}
-        />
-      </Card>
-
-      <Card style={styles.card} tone="premium">
-        <View style={styles.rowBetween}>
-          <Text variant="heading">Membership</Text>
-          <Pill
-            label={active ? 'Active' : membership.status === 'expired' ? 'Expired' : 'None'}
-            color={active ? colors.green : colors.warning}
-            dot
-          />
-        </View>
-        <Row
-          label="Active until"
-          value={membership.activeUntil ? formatDate(membership.activeUntil) : '—'}
-          valueColor={active ? colors.ink : colors.warning}
-        />
-        {active ? (
-          <Row label="Renews in" value={countdown(membershipRemainingMs(entitlement))} />
-        ) : null}
-        <Row label="Runs per renewal" value={membership.runsPerRenewal.toString()} />
-        <Row label="Price" value={formatToken(membership.priceUsdt, 'USDT')} />
-        <Text variant="caption" color={colors.ink2}>
-          Renewing adds {membership.runsPerRenewal} run credits. Letting it lapse stops the monthly
-          top-up; it does not take back credits you already hold.
-        </Text>
-        <Button
-          label={`Renew · ${formatToken(membership.priceUsdt, 'USDT')}`}
-          variant="premium"
-          size="lg"
-          loading={renewing}
-          onPress={() => void renew()}
-        />
-      </Card>
-
-      <Card style={styles.card} tone="muted">
-        <Text variant="caption" color={colors.ink3}>
-          Prices and the monthly ceiling are enforced by the server — the copies in the app are for
-          showing a total before you tap. Nothing is charged in this build: how USDT is collected
-          follows the custody decision in the README, which is deliberately unmade.
-        </Text>
-      </Card>
+      <ConfirmSheet
+        visible={confirm !== null}
+        title={confirm === 'renew' ? 'Renew membership' : `Buy ${selected.runs} runs`}
+        lines={[
+          { label: 'Pay with', value: currency },
+          { label: 'Runs added', value: String(confirm === 'renew' ? membership.runsPerRenewal : selected.runs) },
+          { label: 'Network fee', value: '≈ 0.0004 BNB' },
+        ]}
+        total={{ label: 'You pay', value: `${formatToken(confirm === 'renew' ? renewPrice : price)} ${currency}` }}
+        note="The price is quoted by the server and bound into the signed payment. Credits land once the transfer confirms."
+        confirmLabel="Sign & pay"
+        busy={buying || renewing}
+        onConfirm={() => void onBuy()}
+        onCancel={() => setConfirm(null)}
+      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  hero: { paddingVertical: spacing.xl, alignItems: 'center', gap: spacing.xs },
-  card: { gap: spacing.sm, marginBottom: spacing.lg },
+  flex: { flex: 1 },
+  gap: { gap: spacing.md },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  input: {
-    ...type.body,
-    color: colors.ink,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.sm,
+  section: { marginTop: spacing.xl, marginBottom: spacing.lg },
+  packs: { gap: 10 },
+  pack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: 16,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.lineNeutral,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    borderColor: colors.line,
+    backgroundColor: colors.raised,
   },
+  packOn: { borderColor: colors.redHot, backgroundColor: colors.raised2 },
+  packTitle: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  packPrice: { fontSize: 15 },
+  radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: colors.inkFaint, alignItems: 'center', justifyContent: 'center' },
+  radioOn: { borderColor: colors.redHot, backgroundColor: colors.redHot },
+  radioDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.bg },
+  balance: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.lg },
 });

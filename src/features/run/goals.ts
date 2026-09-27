@@ -14,6 +14,8 @@ export const GOAL_RULES = {
   weekDays: 7,
   /** Steps a day needs for its quest to pay. */
   dailyStepGoal: REWARD_RULES.dailyStepGoal,
+  /** Moving minutes a day, the live run's inner ring. A target to show, not a rule that pays. */
+  activeMinutesGoal: 30,
 } as const;
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;

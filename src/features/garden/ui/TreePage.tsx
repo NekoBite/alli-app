@@ -1,9 +1,9 @@
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button, Card, Pill, Row, Text } from '@/components';
-import { colors, spacing } from '@/theme';
+import { colors, radius, spacing } from '@/theme';
 import { formatStars, formatToken } from '@/utils/format';
 import { countdown } from '@/utils/time';
 import { hasMinigame } from '../minigames';
@@ -23,11 +23,11 @@ const HEALTH_LABEL: Record<Health, string> = {
 };
 
 const HEALTH_COLOR: Record<Health, string> = {
-  thriving: colors.green,
-  stressed: colors.warning,
+  thriving: colors.ok,
+  stressed: colors.warn,
   wilting: colors.danger,
-  dead: colors.ink3,
-  retired: colors.gold,
+  dead: colors.inkFaint,
+  retired: colors.warn,
 };
 
 /** One tree: its stage, its meters, and everything the player can do for it. */
@@ -115,35 +115,46 @@ export function TreePage({ view, width }: { view: PlotView; width: number }) {
   const conditionGame =
     conditionRule?.minigame && hasMinigame(conditionRule.minigame) ? conditionRule.minigame : undefined;
 
+  const stageLabel = view.stage[0]!.toUpperCase() + view.stage.slice(1);
+  const openDetail = () => router.push({ pathname: '/garden/plot/[id]', params: { id: view.id } });
+
   return (
     <ScrollView style={{ width }} contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
-      <View style={styles.head}>
-        <View style={styles.title}>
-          <Text variant="title">{view.seed.name}</Text>
-          <Text variant="caption" color={colors.ink2}>
-            Day {Math.floor(view.ageDays) + 1} of {view.seed.lifetimeDays} ·{' '}
-            {view.streakDays > 0 ? `${view.streakDays}-day streak` : 'no streak yet'}
-          </Text>
-        </View>
-        <Pill label={HEALTH_LABEL[view.health]} color={HEALTH_COLOR[view.health]} dot />
+      <View style={styles.stage}>
+        <TreeStage view={view} popped={popped} onTapTree={onTapTree} onTapSparkle={onTapSparkle} />
       </View>
 
-      <TreeStage view={view} popped={popped} onTapTree={onTapTree} onTapSparkle={onTapSparkle} />
+      <View style={styles.head}>
+        <Pressable accessibilityRole="button" onPress={openDetail} style={styles.title}>
+          <Text variant="heading" style={styles.name}>
+            {view.seed.name} · {stageLabel}
+          </Text>
+          <Text variant="caption" color={colors.inkDim}>
+            Day {Math.floor(view.ageDays) + 1} of {view.seed.lifetimeDays} ·{' '}
+            <Text variant="caption" color={HEALTH_COLOR[view.health]}>
+              {HEALTH_LABEL[view.health].toLowerCase()}
+            </Text>
+          </Text>
+        </Pressable>
+        {view.claimableStars > 0 ? (
+          <Button label={`Collect ${formatStars(view.claimableStars)} ★`} size="sm" onPress={onTapSparkle} />
+        ) : (
+          <Pill label={HEALTH_LABEL[view.health]} color={HEALTH_COLOR[view.health]} />
+        )}
+      </View>
 
       <View style={styles.flashRow}>
         {flash ? (
-          <Pill label={flash} color={colors.gold} />
-        ) : view.claimableStars > 0 ? (
-          <Text variant="caption" color={colors.gold}>
-            {formatStars(view.claimableStars)} ★ waiting · tap the sparkles to collect
+          <Pill label={flash} color={colors.warn} />
+        ) : !tendable ? (
+          <Text variant="caption" color={colors.inkDim}>
+            {view.health === 'dead'
+              ? 'This tree has died. Plant a new seed to keep the garden going.'
+              : 'This tree has lived its thirty days. Plant a new seed.'}
           </Text>
         ) : (
-          <Text variant="caption" color={colors.ink2}>
-            {tendable
-              ? `Stay above every line tonight to earn ${formatStars(view.nextReward)} ★`
-              : view.health === 'dead'
-                ? 'This tree has died. Plant a new seed to keep the garden going.'
-                : 'This tree has lived its thirty days. Plant a new seed.'}
+          <Text variant="mono" color={colors.inkFaint}>
+            Stay above every line tonight to earn {formatStars(view.nextReward)} ★
           </Text>
         )}
       </View>
@@ -153,6 +164,30 @@ export function TreePage({ view, width }: { view: PlotView; width: number }) {
           <Card style={styles.card}>
             <StatusMeters meters={view.meters} />
           </Card>
+
+          <View style={styles.toolbar}>
+            <Button
+              label="Water"
+              variant="secondary"
+              loading={busy === view.id}
+              onPress={() => void onWater()}
+              style={styles.tool}
+            />
+            <Button
+              label={view.sunFilledToday ? 'Sun ✓' : 'Sun'}
+              variant="secondary"
+              disabled={busy === view.id || view.sunFilledToday}
+              onPress={onTapTree}
+              style={styles.tool}
+            />
+            <Button
+              label={lowCarbon ? 'Compost' : 'Feed'}
+              variant="secondary"
+              disabled={busy === view.id}
+              onPress={onFertilise}
+              style={styles.tool}
+            />
+          </View>
 
           <Card style={styles.card}>
             <TapMeter
@@ -167,34 +202,8 @@ export function TreePage({ view, width }: { view: PlotView; width: number }) {
             />
           </Card>
 
-          <View style={styles.toolbar}>
-            <Button
-              label="Water"
-              variant="secondary"
-              loading={busy === view.id}
-              onPress={() => void onWater()}
-              style={styles.tool}
-            />
-            <Button
-              label="Fertilise"
-              variant="secondary"
-              disabled={busy === view.id}
-              onPress={onFertilise}
-              style={styles.tool}
-            />
-            {lowCarbon ? (
-              <Button
-                label="Gather"
-                variant="secondary"
-                disabled={busy === view.id || view.compost.maturing}
-                onPress={() => openMinigame('compost')}
-                style={styles.tool}
-              />
-            ) : null}
-          </View>
-
           {lowCarbon ? (
-            <Card style={styles.card} tone="muted">
+            <Card style={styles.card}>
               <Row
                 label="Compost"
                 value={
@@ -202,24 +211,31 @@ export function TreePage({ view, width }: { view: PlotView; width: number }) {
                     ? `Heap matures in ${countdown(view.compost.msUntilMature)}`
                     : `${view.compost.ready} ready`
                 }
-                valueColor={view.compost.ready > 0 ? colors.green : colors.ink2}
+                valueColor={view.compost.ready > 0 ? colors.ok : colors.inkDim}
               />
               <Row
                 label="Practices"
                 value={view.practices.length ? view.practices.map((id) => PRACTICES[id].label).join(', ') : 'None yet'}
-                valueColor={view.practices.length ? colors.teal : colors.ink2}
+                valueColor={view.practices.length ? colors.ok : colors.inkDim}
               />
               <Row
-                label="Carbon multiplier on this tree"
-                value={`${view.carbonMultiplier.toFixed(2)}×`}
-                valueColor={view.carbonMultiplier >= 1 ? colors.green : colors.warning}
+                label="Carbon multiplier"
+                value={`×${view.carbonMultiplier.toFixed(2)}`}
+                valueColor={view.carbonMultiplier >= 1 ? colors.ok : colors.warn}
+              />
+              <Button
+                label="Gather compost"
+                variant="secondary"
+                size="sm"
+                disabled={busy === view.id || view.compost.maturing}
+                onPress={() => openMinigame('compost')}
               />
               {conditionRule ? (
                 <View style={styles.condition}>
-                  <Text variant="bodyStrong" color={colors.warning}>
+                  <Text variant="bodyStrong" color={colors.warn}>
                     {conditionRule.label}
                   </Text>
-                  <Text variant="caption" color={colors.ink2}>
+                  <Text variant="caption" color={colors.inkDim}>
                     {conditionRule.lesson}
                   </Text>
                   {conditionGame ? (
@@ -229,7 +245,7 @@ export function TreePage({ view, width }: { view: PlotView; width: number }) {
                       onPress={() => openMinigame(conditionGame)}
                     />
                   ) : (
-                    <Text variant="caption" color={colors.ink3}>
+                    <Text variant="caption" color={colors.inkFaint}>
                       Countered by {PRACTICES[conditionRule.counteredBy].label}. That minigame is
                       not built yet, so for now: keep the meters up the hard way.
                     </Text>
@@ -243,19 +259,23 @@ export function TreePage({ view, width }: { view: PlotView; width: number }) {
         <Button label="Open the seed shop" onPress={() => router.push('/garden/shop')} />
       )}
 
-      <Button
-        label="Details"
-        variant="ghost"
-        onPress={() => router.push({ pathname: '/garden/plot/[id]', params: { id: view.id } })}
-      />
+      <Button label="Tree details →" variant="ghost" onPress={openDetail} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
+  page: { paddingHorizontal: spacing.gutter, paddingBottom: spacing.xxl, gap: spacing.md },
+  stage: {
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.raised,
+  },
   head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md },
   title: { flex: 1, gap: 2 },
+  name: { fontSize: 17 },
   flashRow: { minHeight: 24, alignItems: 'center' },
   card: { gap: spacing.sm },
   toolbar: { flexDirection: 'row', gap: spacing.sm },

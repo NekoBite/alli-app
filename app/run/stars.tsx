@@ -1,131 +1,179 @@
-import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { StyleSheet, TextInput, View } from 'react-native';
 
-import { Button, Card, Row, Screen, Text } from '@/components';
-import { REWARD_RULES, starsToAlli } from '@/features/run/rewards';
-import { shoeFor } from '@/features/run/shoes';
+import {
+  Button,
+  Card,
+  Chips,
+  KeyValueCard,
+  Pill,
+  Screen,
+  ScreenHeader,
+  Text,
+  toast,
+} from '@/components';
+import { starsToAlli } from '@/features/run/rewards';
 import { useRunStore } from '@/features/run/store';
 import { useWalletStore } from '@/features/wallet/store';
-import { chain } from '@/services/chain';
-import { colors, radius, spacing, type } from '@/theme';
-import { formatPoints, formatStars, formatToken, shortAddress } from '@/utils/format';
+import { colors, fonts, spacing } from '@/theme';
+import { formatStars, formatToken } from '@/utils/format';
 
+type Preset = '25' | '50' | 'max';
+
+/** 2.6 Exchange stars — stars to ALLI at the published rate; the server signs the payout. */
 export default function StarsScreen() {
   const { profile, exchanging, exchangeStars } = useRunStore();
   const account = useWalletStore((state) => state.account);
+  const loadWallet = useWalletStore((state) => state.load);
   const [amount, setAmount] = useState('');
+  const [preset, setPreset] = useState<Preset | null>(null);
 
-  const parsed = Number(amount);
-  const stars = Number.isInteger(parsed) ? parsed : NaN;
-  const valid = !Number.isNaN(stars) && stars > 0 && stars <= profile.starsBalance;
+  useEffect(() => {
+    if (!account) void loadWallet();
+  }, [account, loadWallet]);
+
+  const balance = Math.floor(profile.starsBalance);
+  const stars = Number(amount);
+  const whole = Number.isInteger(stars) && stars > 0;
+  const error = !amount
+    ? null
+    : !whole
+      ? 'Exchange whole stars.'
+      : stars > profile.starsBalance
+        ? `You hold ${formatStars(profile.starsBalance)} ★.`
+        : null;
+
+  const pick = (p: Preset) => {
+    setPreset(p);
+    const n = p === 'max' ? balance : Math.floor((balance * Number(p)) / 100);
+    setAmount(n > 0 ? String(n) : '');
+  };
 
   const exchange = async () => {
     if (!account) return;
     try {
-      const { alli, txHash } = await exchangeStars(stars, account.address);
-      setAmount('');
-      Alert.alert('Exchanged', `${formatToken(alli, 'ALLI')} sent.\n\n${txHash}`);
-    } catch (error) {
-      Alert.alert('Could not exchange', (error as Error).message);
+      const { alli } = await exchangeStars(stars, account.address);
+      toast(`${formatToken(alli, 'ALLI')} on its way to your wallet`, 'ok');
+      router.replace('/(tabs)/wallet');
+    } catch (e) {
+      toast((e as Error).message, 'error');
     }
   };
 
   return (
-    <Screen>
-      <View style={styles.hero}>
-        <Text variant="label" color={colors.ink2}>
-          Stars
-        </Text>
-        <Text variant="hero" color={colors.gold}>
-          {formatStars(profile.starsBalance)}
-        </Text>
-        <Text variant="caption" color={colors.ink2}>
-          ≈ {formatToken(starsToAlli(profile.starsBalance), 'ALLI')} · 1 star ={' '}
-          {formatToken(REWARD_RULES.alliPerStar, 'ALLI')}
-        </Text>
-      </View>
+    <Screen
+      footer={
+        <>
+          <Button
+            label={whole && !error ? `Exchange ${formatStars(stars)} ★` : 'Exchange'}
+            loading={exchanging}
+            disabled={!whole || !!error || !account}
+            onPress={() => void exchange()}
+          />
+          {!account ? (
+            <Text variant="caption" color={colors.warn} center>
+              No wallet address yet, so there is nowhere for the ALLI to land.
+            </Text>
+          ) : null}
+        </>
+      }
+    >
+      <ScreenHeader eyebrow="Stars → ALLI" title="Exchange stars" back />
 
-      <Card style={styles.card}>
-        <Text variant="heading">Exchange stars for ALLI</Text>
-        <Text variant="caption" color={colors.ink2}>
-          Stars come from the daily quest: {formatPoints(REWARD_RULES.dailyStepGoal)} GPS-verified
-          steps in a day pays {REWARD_RULES.starsPerQuest * shoeFor(profile.shoeTier).rewardMultiplier}{' '}
-          at your {shoeFor(profile.shoeTier).name} tier.
-        </Text>
-
-        <TextInput
-          value={amount}
-          onChangeText={setAmount}
-          placeholder="Stars to exchange"
-          placeholderTextColor={colors.ink3}
-          keyboardType="number-pad"
-          style={styles.input}
-          accessibilityLabel="Stars to exchange"
+      <Card style={styles.gap}>
+        <View style={styles.rowBetween}>
+          <Text variant="label" color={colors.inkFaint}>
+            You exchange
+          </Text>
+          <Text variant="mono" color={colors.inkFaint}>
+            Balance {formatStars(profile.starsBalance)} ★
+          </Text>
+        </View>
+        <View style={styles.rowBetween}>
+          <TextInput
+            value={amount}
+            onChangeText={(t) => {
+              setPreset(null);
+              setAmount(t.replace(/[^\d]/g, ''));
+            }}
+            placeholder="0"
+            placeholderTextColor={colors.inkFaint}
+            keyboardType="number-pad"
+            style={styles.amount}
+            accessibilityLabel="Stars to exchange"
+          />
+          <Pill label="★ Stars" color={colors.inkDim} />
+        </View>
+        <Chips
+          options={[
+            { value: '25', label: '25%' },
+            { value: '50', label: '50%' },
+            { value: 'max', label: 'Max' },
+          ]}
+          value={preset}
+          onChange={pick}
         />
-        <Row
-          label="Available"
-          value={formatStars(profile.starsBalance)}
-          right={
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setAmount(String(Math.floor(profile.starsBalance)))}
-              hitSlop={8}
-            >
-              <Text variant="bodyStrong" color={colors.green}>
-                Max
-              </Text>
-            </Pressable>
-          }
-        />
-        <Row
-          label="You receive"
-          value={formatToken(starsToAlli(Number.isNaN(stars) ? 0 : stars), 'ALLI')}
-          valueColor={colors.green}
-          emphasis
-        />
-
-        <Button
-          label="Exchange"
-          size="lg"
-          loading={exchanging}
-          disabled={!valid || !account}
-          onPress={() => void exchange()}
-        />
-        {!account ? (
-          <Text variant="caption" color={colors.warning}>
-            No wallet address yet, so there is nowhere for the ALLI to land.
+        {error ? (
+          <Text variant="caption" color={colors.warn}>
+            {error}
           </Text>
         ) : null}
       </Card>
 
-      <Card style={styles.card} tone="muted">
-        <Row label="Network" value={chain.name} />
-        <Row
-          label="Destination"
-          value={account ? shortAddress(account.address) : '—'}
-          valueColor={colors.ink2}
-        />
-        <Text variant="caption" color={colors.ink3}>
-          Stars are burned server-side before the transfer is broadcast, and the payout is a
-          treasury transfer on BNB Smart Chain — irreversible once sent. ALLI is not deployed yet,
-          so a real backend answers this with a 503 rather than pretending.
+      <View style={styles.arrowWrap}>
+        <View style={styles.arrow}>
+          <Text variant="bodyStrong" color={colors.redHot}>
+            ↓
+          </Text>
+        </View>
+      </View>
+
+      <Card tone="hero" style={styles.gap}>
+        <Text variant="label" color={colors.inkFaint}>
+          You receive
         </Text>
+        <View style={styles.rowBetween}>
+          <Text style={[styles.amount, styles.receive]} numberOfLines={1}>
+            {formatToken(starsToAlli(whole ? stars : 0))}
+          </Text>
+          <Pill label="ALLI" />
+        </View>
       </Card>
+
+      <View style={styles.details}>
+        <KeyValueCard
+          lines={[
+            { label: 'Rate', value: `1 ★ = ${formatToken(starsToAlli(1))} ALLI` },
+            { label: 'Network fee', value: 'Covered by ALLI' },
+            { label: 'Arrives', value: 'Wallet · after confirmation' },
+          ]}
+        />
+      </View>
+      <Text variant="caption" color={colors.inkFaint} style={styles.note}>
+        Stars are burned first; the server then signs a one-time voucher and the RewardClaim contract
+        pays the ALLI. The transfer shows in Wallet activity.
+      </Text>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  hero: { paddingVertical: spacing.xl, alignItems: 'center', gap: spacing.xs },
-  card: { gap: spacing.sm, marginBottom: spacing.lg },
-  input: {
-    ...type.body,
-    color: colors.ink,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.sm,
+  gap: { gap: spacing.md },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  amount: { flex: 1, fontFamily: fonts.display, fontSize: 40, lineHeight: 48, color: colors.ink, padding: 0 },
+  receive: { color: colors.redHot },
+  arrowWrap: { alignItems: 'center', marginVertical: -6, zIndex: 1 },
+  arrow: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 1,
-    borderColor: colors.lineNeutral,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    borderColor: colors.lineStrong,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  details: { marginTop: 14 },
+  note: { marginTop: spacing.md },
 });

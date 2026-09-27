@@ -1,89 +1,50 @@
 import { Tabs } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Text } from '@/components';
-import { colors, type } from '@/theme';
+import { Gradient } from '@/components';
+import { colors, fonts } from '@/theme';
 
 /**
- * Placeholder tab glyphs. Swap for a proper icon set (@expo/vector-icons, or
- * the brand's own SVGs via react-native-svg) once the icon assets exist.
+ * The wireframes' tab glyph: a rounded square, outlined when idle and filled with the primary
+ * gradient when active. Swap for a proper icon set once the brand icons exist.
  */
-function TabGlyph({ label, focused }: { label: string; focused: boolean }) {
-  return (
-    <View style={[styles.glyph, focused && styles.glyphActive]}>
-      <Text variant="label" color={focused ? colors.onGreen : colors.ink2}>
-        {label}
-      </Text>
-    </View>
-  );
+function TabGlyph({ focused }: { focused: boolean }) {
+  return focused ? <Gradient style={styles.glyph} /> : <View style={[styles.glyph, styles.idle]} />;
 }
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: colors.bg },
-        headerTitleStyle: { ...type.heading, color: colors.ink },
-        headerShadowVisible: false,
-        tabBarStyle: styles.bar,
-        tabBarActiveTintColor: colors.green,
-        tabBarInactiveTintColor: colors.ink2,
-        tabBarLabelStyle: type.label,
+        headerShown: false,
+        tabBarStyle: [styles.bar, { height: 76 + insets.bottom, paddingBottom: insets.bottom + 12 }],
+        tabBarLabelPosition: 'below-icon',
+        tabBarActiveTintColor: colors.redHot,
+        tabBarInactiveTintColor: colors.inkFaint,
+        tabBarLabelStyle: styles.label,
+        tabBarIcon: ({ focused }) => <TabGlyph focused={focused} />,
         sceneStyle: { backgroundColor: colors.bg },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Today',
-          tabBarIcon: ({ focused }) => <TabGlyph label="AL" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="run"
-        options={{
-          title: 'ALLI RUN',
-          tabBarIcon: ({ focused }) => <TabGlyph label="AR" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="garden"
-        options={{
-          title: 'Garden',
-          tabBarIcon: ({ focused }) => <TabGlyph label="GR" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="market"
-        options={{
-          title: 'Market',
-          tabBarIcon: ({ focused }) => <TabGlyph label="MK" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="wallet"
-        options={{
-          title: 'Wallet',
-          tabBarIcon: ({ focused }) => <TabGlyph label="WL" focused={focused} />,
-        }}
-      />
+      <Tabs.Screen name="index" options={{ title: 'Today' }} />
+      <Tabs.Screen name="run" options={{ title: 'Run' }} />
+      <Tabs.Screen name="garden" options={{ title: 'Garden' }} />
+      <Tabs.Screen name="market" options={{ title: 'Market' }} />
+      <Tabs.Screen name="wallet" options={{ title: 'Wallet' }} />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
   bar: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.raised,
     borderTopColor: colors.line,
     borderTopWidth: 1,
+    paddingTop: 8,
   },
-  glyph: {
-    width: 30,
-    height: 22,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceAlt,
-  },
-  glyphActive: { backgroundColor: colors.green },
+  glyph: { width: 24, height: 24, borderRadius: 8 },
+  idle: { borderWidth: 1.5, borderColor: colors.inkFaint },
+  label: { fontFamily: fonts.bodySemiBold, fontSize: 11, lineHeight: 16, marginTop: 4 },
 });

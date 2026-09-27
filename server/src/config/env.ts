@@ -42,6 +42,34 @@ const Schema = z.object({
   RELAYER_PRIVATE_KEY: z.string().optional(),
 
   /**
+   * Payments (contracts/src/PaymentRouter.sol). Purchases answer 503 until the router, the quote
+   * key and the chain are set; the USDT address is needed to sell anything in USDT.
+   */
+  CHAIN_ID: z.coerce.number().int().positive().default(97),
+  PAYMENT_ROUTER_ADDRESS: z.string().optional(),
+  USDT_TOKEN_ADDRESS: z.string().optional(),
+  QUOTE_SIGNER_PRIVATE_KEY: z.string().optional(),
+  /** How long a quote stays payable. Short: a stale price is a free option for the buyer. */
+  QUOTE_TTL_SECONDS: z.coerce.number().int().positive().default(600),
+  /** Chain watcher cadence for `Paid` events; 0 disables the in-process watcher. */
+  PAYMENT_POLL_SECONDS: z.coerce.number().int().min(0).default(15),
+
+  /**
+   * When set, star exchanges pay through RewardClaim (a signed voucher the relayer submits with
+   * claimFor) instead of a direct transfer from the relayer's float. VOUCHER_SIGNER_PRIVATE_KEY
+   * must hold RewardClaim's SIGNER_ROLE; it defaults to the quote key.
+   */
+  REWARD_CLAIM_ADDRESS: z.string().optional(),
+  VOUCHER_SIGNER_PRIVATE_KEY: z.string().optional(),
+
+  /** Display prices for the wallet (GET /v1/wallet/prices). Never used to price a purchase. */
+  ALLI_USD_PRICE: z.coerce.number().nonnegative().default(0),
+  BNB_USD_PRICE: z.coerce.number().nonnegative().default(0),
+
+  /** Run credits every new account starts with. 0 = the first run needs a membership or a pack. */
+  SIGNUP_RUN_CREDITS: z.coerce.number().int().min(0).default(0),
+
+  /**
    * Device attestation. `off` accepts every submission and is for local work
    * only — it is the difference between anti-cheat and theatre.
    */

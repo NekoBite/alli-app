@@ -1,9 +1,12 @@
+import { getAddress } from 'ethers';
+
 import { pool, transaction, type Db } from '../db/pool.ts';
 import { env } from '../config/env.ts';
 import { ApiError } from '../lib/errors.ts';
 import { mailer } from './mailer.ts';
 import type { ProviderProfile } from './providers.ts';
 import { generateLoginCode, generateSessionToken, hashSecret, safeEqualHex } from './tokens.ts';
+import { grantCredits } from '../credits/service.ts';
 
 export type User = {
   id: string;
@@ -104,7 +107,7 @@ export async function requestLoginCode(email: string): Promise<void> {
   });
 }
 
-export type Session = { token: string; expiresAt: string; user: User };
+export type Session = { token: string; expiresAt: string; user: User; isNew: boolean };
 
 export async function verifyLoginCode(
   email: string,
@@ -153,6 +156,12 @@ export async function verifyLoginCode(
 
 /** Mints a session for a user who has just proven who they are. */
 async function issueSession(db: Db, userId: string, userAgent?: string): Promise<Session> {
+  // First session ever = the sign-in that created the account. The app shows its one-time
+  // wallet-ready screen on that, and sign-up run credits are granted here, once.
+  const { rows: prior } = await db.query('SELECT 1 FROM sessions WHERE user_id = $1 LIMIT 1', [userId]);
+  const isNew = prior.length === 0;
+  if (isNew) await grantCredits(db, userId, env.SIGNUP_RUN_CREDITS, 'signup');
+
   const token = generateSessionToken();
   const { rows: sessions } = await db.query<{ expires_at: string }>(
     `INSERT INTO sessions (user_id, token_hash, expires_at, user_agent)
@@ -165,7 +174,7 @@ async function issueSession(db: Db, userId: string, userAgent?: string): Promise
     `SELECT ${USER_COLUMNS} FROM users WHERE id = $1`,
     [userId],
   );
-  return { token, expiresAt: sessions[0]!.expires_at, user: toUser(rows[0]!) };
+  return { token, expiresAt: sessions[0]!.expires_at, user: toUser(rows[0]!), isNew };
 }
 
 /**
@@ -251,6 +260,17 @@ export async function revokeSession(token: string): Promise<void> {
   );
 }
 
-export async function setWalletAddress(userId: string, address: string): Promise<void> {
-  await pool.query('UPDATE users SET wallet_address = $1 WHERE id = $2', [address, userId]);
+/**
+ * Stores the address checksummed. A mixed-case address whose EIP-55 checksum fails is refused: it
+ * is almost always a typo, and payouts to a typo are unrecoverable.
+ */
+export async function setWalletAddress(userId: string, address: string): Promise<string> {
+  let checksummed: string;
+  try {
+    checksummed = getAddress(address);
+  } catch {
+    throw ApiError.badRequest('bad_address', 'That address has an invalid checksum. Check it for a typo.');
+  }
+  await pool.query('UPDATE users SET wallet_address = $1 WHERE id = $2', [checksummed, userId]);
+  return checksummed;
 }

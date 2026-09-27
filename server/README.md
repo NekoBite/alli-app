@@ -65,7 +65,7 @@ multiplier the phone can set to 1000.
 
 ```
 POST /v1/auth/request-code   { email }              → 204 (always, see below)
-POST /v1/auth/verify-code    { email, code }        → { token, expiresAt, user }
+POST /v1/auth/verify-code    { email, code }        → { token, expiresAt, user, isNew }
 POST /v1/auth/logout                                 → 204
 GET  /v1/auth/me                                     → user
 PUT  /v1/auth/wallet         { address }             → user
@@ -80,20 +80,28 @@ POST /v1/run/stars/exchange         → { txHash, alli, starsBalance }
 one alike. Distinguishing them would turn it into an account-existence oracle, so
 the "too many codes" case is swallowed there on purpose.
 
-The app also calls three credit endpoints that **this server does not implement
-yet** — run credits and the membership that grants them:
+Commerce and referrals (migration 006):
 
 ```
-GET  /v1/run/entitlement            → { runsLeft, runsThisMonth, extraRunsBoughtThisMonth,
-                                        membership, serverTime }
-POST /v1/run/credits       { runs } → buy extra run credits
-POST /v1/run/membership/renew       → extend a month, grant its credits
+GET  /v1/run/entitlement                   → { runsLeft, runsThisMonth, extraRunsBoughtThisMonth, membership, serverTime }
+POST /v1/payments/intents  { kind, … }     → a signed PaymentRouter quote (runs · membership · seed · shoe · order)
+GET  /v1/payments/intents/:id              → { status, txHash }
+POST /v1/garden/plots      { seedId, intentId? }
+GET  /v1/market/products · /v1/market/orders[/:id] · POST /v1/market/orders
+GET  /v1/referrals · /v1/referrals/:program · /v1/referrals/:program/downline
+POST /v1/referrals/attribute { code }
+GET  /v1/wallet/account · /v1/wallet/transactions · /v1/wallet/prices
 ```
 
-They need a credit ledger shaped like `star_ledger`, a membership row, the month
-bucket cut with this server's clock, and a USDT charge behind a purchase. The
-client treats a missing entitlement as non-fatal rather than showing a balance it
-made up.
+**A purchase is a signed quote, settled on chain.** The server prices it from the shared rules,
+binds it to the member's wallet and a deadline, and signs it (EIP-712, `src/chain/signer.ts`).
+`PaymentRouter` accepts only that price. `src/chain/watcher.ts` polls `Paid` events and calls
+`confirmPayment`, which flips the intent and fulfils it — credits, membership, the paid order,
+the shoe tier, and the referral commission — in one transaction, once per intent. With no router
+or quote key configured every purchase answers 503 `payments_unavailable`, and planting stays free.
+
+**A run spends a credit.** `submitRun` refuses (402 `no_run_credits`) when the balance is zero and
+writes −1 against the run inside its transaction. `SIGNUP_RUN_CREDITS` grants a starting balance.
 
 ## Correctness decisions worth knowing
 
@@ -177,11 +185,10 @@ migrator takes an advisory lock so two processes cannot apply the same file.
 - **No admin surface.** Reviewing outlier earners, disabling an account, issuing
   an adjustment — all currently manual SQL. `users.disabled_at` and the
   `adjustment` ledger reason exist for it.
-- **No run credits or membership.** The three endpoints above answer nothing:
-  there is no credit to charge a run against and nothing that takes USDT for one.
-  This is the largest gap left in the run loop.
-- **Shoe tiers are stored, never sold.** `users.shoe_tier` defaults to Leather
-  and the server honours whatever it holds, but nothing mints or sells a Silver
-  or Gold NFT, so every account earns the 1× reward.
+- **No shoe minting job.** A `shoe` payment raises `users.shoe_tier` (the multiplier
+  follows it), but nothing mints the matching `AlliShoes` NFT yet.
+- **No ReferralPayout publisher.** Commissions are booked in `commissions`; the job
+  that builds and publishes Merkle roots from it is not written.
+- **Card endpoints.** No issuer is chosen, so `/v1/card/*` has no server side.
 - **Garden multiplier is not wired in.** Planted trees are meant to contribute to
   the reward (see `docs/architecture.md`); nothing reads that bonus.

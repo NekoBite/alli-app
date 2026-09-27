@@ -127,7 +127,7 @@ export function CompostGame({ width, height, deadline, onFinish }: GameProps) {
             style={styles.holdButton}
           >
             <Animated.View style={[styles.holdFill, holdStyle]} />
-            <Text variant="bodyStrong" color={colors.onGreen}>
+            <Text variant="bodyStrong" color={colors.onRed}>
               Hold to turn
             </Text>
           </Pressable>
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 56,
     borderRadius: radius.lg,
-    backgroundColor: colors.greenDim,
+    backgroundColor: colors.redDeep,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -189,6 +189,6 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: colors.green,
+    backgroundColor: colors.redHot,
   },
 });

@@ -27,8 +27,8 @@ export async function gardenRoutes(app: FastifyInstance): Promise<void> {
     preHandler: requireUser,
     config: { rateLimit: { max: 30, timeWindow: '1 hour' } },
     handler: async (request) => {
-      const { seedId } = PlantSchema.parse(request.body);
-      return plant(currentUser(request).id, seedId);
+      const { seedId, intentId } = PlantSchema.parse(request.body);
+      return plant(currentUser(request).id, seedId, Date.now(), intentId);
     },
   });
 

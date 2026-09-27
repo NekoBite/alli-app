@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { cardApi, walletApi } from '@/services/api';
+import { cardApi, walletApi, type TokenPrices } from '@/services/api';
 import { chainClient, type ChainTx, type TokenBalance, type TokenSymbol } from '@/services/chain';
 import type { CardTransaction, VisaCard, WalletAccount } from './types';
 
@@ -8,6 +8,8 @@ type WalletState = {
   account?: WalletAccount;
   balances: TokenBalance[];
   transactions: ChainTx[];
+  /** USD reference prices; absent until read, and the UI shows no fiat without them. */
+  prices?: TokenPrices;
   card?: VisaCard;
   cardTransactions: CardTransaction[];
   loading: boolean;
@@ -21,8 +23,13 @@ type WalletState = {
   startCardApplication: () => Promise<void>;
   setCardFrozen: (frozen: boolean) => Promise<void>;
   topUpCard: (amountUsd: number, from: 'ALLI' | 'USDT') => Promise<void>;
+  setCardFunding: (token: 'ALLI' | 'USDT') => Promise<void>;
 
   balanceOf: (symbol: TokenSymbol) => TokenBalance | undefined;
+  /** USD value of a balance, or undefined without a price. */
+  usdOf: (symbol: TokenSymbol) => number | undefined;
+  /** Marks the recovery phrase as confirmed (clears the backup banner). */
+  markBackedUp: () => void;
 };
 
 export const useWalletStore = create<WalletState>((set, get) => ({
@@ -45,6 +52,12 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       set({ account, balances, transactions, card, cardTransactions, loading: false });
     } catch (error) {
       set({ loading: false, error: (error as Error).message });
+    }
+    // Prices are decoration: a failure leaves the fiat figures off, nothing else.
+    try {
+      set({ prices: await walletApi.getPrices() });
+    } catch {
+      set({ prices: undefined });
     }
   },
 
@@ -106,7 +119,31 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     }
   },
 
+  async setCardFunding(token) {
+    const { card } = get();
+    if (!card) return;
+    set({ card: { ...card, fundingToken: token } });
+    try {
+      set({ card: await cardApi.setFundingToken(token) });
+    } catch (error) {
+      set({ card, error: (error as Error).message });
+      throw error;
+    }
+  },
+
   balanceOf(symbol) {
     return get().balances.find((balance) => balance.symbol === symbol);
+  },
+
+  usdOf(symbol) {
+    const { prices } = get();
+    const balance = get().balanceOf(symbol);
+    if (!prices || !balance) return undefined;
+    return Number(balance.formatted) * prices[symbol];
+  },
+
+  markBackedUp() {
+    const { account } = get();
+    if (account) set({ account: { ...account, backedUp: true } });
   },
 }));
