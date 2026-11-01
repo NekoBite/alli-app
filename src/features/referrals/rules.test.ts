@@ -15,7 +15,7 @@ describe('splitCommission', () => {
       { id: 'g4', qualified: false },
       { id: 'g5', qualified: true },
     ]);
-    expect(paidTo(split, 'g1')).toBe(40n * USDT);
+    expect(paidTo(split, 'g1')).toBe(20n * USDT);
     expect(paidTo(split, 'g2')).toBe(0n);
     expect(paidTo(split, 'g3')).toBe(20n * USDT);
     expect(paidTo(split, 'g5')).toBe(10n * USDT);
@@ -28,13 +28,13 @@ describe('splitCommission', () => {
       { id: 'g1', qualified: false },
       { id: 'g2', qualified: true },
     ]);
-    expect(split.treasury).toBe(40n * USDT);
+    expect(split.treasury).toBe(20n * USDT);
     expect(paidTo(split, 'g2')).toBe(10n * USDT);
   });
 
   it('keeps shares with no sponsor at that depth unassigned', () => {
     const split = splitCommission(100n * USDT, run, [{ id: 'g1', qualified: true }]);
-    expect(paidTo(split, 'g1')).toBe(40n * USDT);
+    expect(paidTo(split, 'g1')).toBe(20n * USDT);
     expect(split.unassigned).toBe(30n * USDT);
   });
 
@@ -50,7 +50,7 @@ describe('splitCommission', () => {
     const amount = 123_456_789n;
     const split = splitCommission(amount, run, Array.from({ length: 6 }, (_, i) => ({ id: `m${i}`, qualified: i % 2 === 0 })));
     const total = split.payouts.reduce((s, p) => s + p.amount, 0n) + split.treasury + split.unassigned;
-    expect(total).toBeLessThanOrEqual((amount * 7000n) / 10_000n);
+    expect(total).toBeLessThanOrEqual((amount * 5000n) / 10_000n);
   });
 
   it('rejects a negative base', () => {
@@ -60,7 +60,7 @@ describe('splitCommission', () => {
 
 describe('helpers', () => {
   it('prints rates the way the hub does', () => {
-    expect(formatRates(REFERRAL_RULES.run.ratesBps)).toBe('40% / 10%');
+    expect(formatRates(REFERRAL_RULES.run.ratesBps)).toBe('20% / 10%');
     expect(formatRates(REFERRAL_RULES.garden.ratesBps)).toBe('20% / 5%');
     expect(formatRates(REFERRAL_RULES.market.ratesBps)).toBe('1% / 0.5%');
   });

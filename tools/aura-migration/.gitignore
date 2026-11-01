@@ -5,4 +5,10 @@ members-page.png
 members.normalized.json
 members.seed.sql
 *.seed.sql
+# Network captures carry session tokens and member data. Only the redacted
+# output of redact-har.mjs (*.redacted.json) is fit to leave the operator's machine,
+# and even that holds balances and wallet addresses — keep it out of git.
+*.har
+*.redacted.json
+capture/
 node_modules/

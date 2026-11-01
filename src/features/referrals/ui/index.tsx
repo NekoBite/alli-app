@@ -31,7 +31,7 @@ export const PROGRAM_COPY: Record<
     glyph: 'R',
     name: 'ALLI RUN',
     tagline: 'Earn when your team upgrades to Silver',
-    youGet: '40% of their Silver upgrade',
+    youGet: '20% of their Silver upgrade',
     friendGets: 'Free wallet + Leather NFT shoe',
   },
   garden: {
