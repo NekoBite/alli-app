@@ -78,7 +78,7 @@ describe('referral programs', () => {
 
     const rows = await commissionsOf(intent.id);
     const to = (id: string) => rows.filter((r) => r.beneficiary_id === id).reduce((s, r) => s + BigInt(r.amount), 0n);
-    assert.equal(to(g1), 40n * USDT);
+    assert.equal(to(g1), 20n * USDT);
     assert.equal(to(g2), 0n);
     assert.equal(to(g3), 20n * USDT); // own 10 + g2's rolled up
     assert.equal(to(g5), 10n * USDT); // g4's rolled up
@@ -101,7 +101,7 @@ describe('referral programs', () => {
     const rows = await commissionsOf(intent.id);
     assert.equal(rows.length, 1);
     assert.equal(rows[0]!.beneficiary_id, null);
-    assert.equal(BigInt(rows[0]!.amount), 40n * USDT);
+    assert.equal(BigInt(rows[0]!.amount), 20n * USDT);
   });
 
   it('holds market commission until the return window closes, and shows it in the hub', async () => {

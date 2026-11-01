@@ -32,9 +32,15 @@ another member does not move them.
 Rates for ALLI RUN come from AURA RUN. The rest are **proposals**. They are placeholders to
 tune, and the back office should hold them as configuration, not constants.
 
+ALLI RUN's Gen 1 rate was corrected from 40% to **20%** on 2026-11-01, against live commission
+records read from the AURA RUN admin panel (`reference/aura-run-referral-model.md` §"Rates,
+corrected"). The 40% figure came from a screenshot of the in-app blurb, which overstated it; the
+panel's own payout history — real, confirmed commissions, not marketing copy — is the better
+source and is what `ratesBps` in `src/features/referrals/rules.ts` now matches.
+
 | Program | Trigger (commissionable event) | Generations & rates | Paid in | Qualified to earn |
 |---|---|---|---|---|
-| ALLI RUN | Team member's first Silver shoe upgrade | Gen 1 40% · Gen 2–4 10% each | USDT | Silver tier or higher **and** active membership |
+| ALLI RUN | Team member's first Silver shoe upgrade | Gen 1 20% · Gen 2–4 10% each | USDT | Silver tier or higher **and** active membership |
 | Garden | Team member buys seeds | Gen 1 20% · Gen 2–3 5% each | Same currency as the seed (ALLI or USDT) | Owns at least one growing tree **and** active membership |
 | Marketplace | Team member's completed order (after the return window), paid from the platform fee | Gen 1 1% · Gen 2 0.5% of order value | Currency of the order | Any tier; identity check for payouts over 100 USDT |
 | ALLI Card | Team member activates a card; share of their spend | Proposed: 5 USDT per activation + 0.2% of spend, Gen 1 only | USDT | TBD at launch (waitlist until then) |
@@ -68,12 +74,12 @@ G4 Silver, membership lapsed · G5 Gold, active.
 
 | Gen | Member | Qualified? | Share | Paid to |
 |---|---|---|---|---|
-| 1 | G1 | yes | 40 | G1 |
+| 1 | G1 | yes | 20 | G1 |
 | 2 | G2 | no (Leather) | 10 | rolls up → G3 |
 | 3 | G3 | yes | 10 | G3 (G3 gets 20 in total) |
 | 4 | G4 | no (lapsed) | 10 | rolls up → G5 |
 
-If G1 had been Leather, their 40 would go to the treasury, not to G2.
+If G1 had been Leather, their 20 would go to the treasury, not to G2.
 
 ### Open points on roll-up
 

@@ -57,7 +57,7 @@ export default function RunScreen() {
       />
 
       <View style={styles.stack}>
-        <InviteBanner title="Invite runners" subtitle="40% of their Silver upgrade" href="/referrals/run" />
+        <InviteBanner title="Invite runners" subtitle="20% of their Silver upgrade" href="/referrals/run" />
 
         <Card tone="hero" style={styles.gap}>
           <View style={styles.rowBetween}>

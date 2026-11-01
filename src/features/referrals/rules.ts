@@ -31,8 +31,8 @@ export const REFERRAL_RULES: Record<ReferralProgramId, ProgramRules> = {
     codePrefix: 'RUN',
     title: 'ALLI RUN',
     trigger:
-      "Paid when someone in your Run team upgrades their shoe to Silver: 40% to Gen 1, 10% each to Gen 2–4.",
-    ratesBps: [4000, 1000, 1000, 1000],
+      "Paid when someone in your Run team upgrades their shoe to Silver: 20% to Gen 1, 10% each to Gen 2–4.",
+    ratesBps: [2000, 1000, 1000, 1000],
     currency: 'USDT',
     live: true,
   },
@@ -70,7 +70,7 @@ export const REFERRAL_RULES: Record<ReferralProgramId, ProgramRules> = {
 
 export const PROGRAM_ORDER: ReferralProgramId[] = ['run', 'garden', 'market', 'card'];
 
-/** "40% / 10%", "1% / 0.5%": Gen 1 then the deeper rate(s), as the hub prints them. */
+/** "20% / 10%", "1% / 0.5%": Gen 1 then the deeper rate(s), as the hub prints them. */
 export function formatRates(ratesBps: readonly number[]): string {
   const pct = (bps: number) => `${(bps / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}%`;
   const [first, ...rest] = ratesBps;

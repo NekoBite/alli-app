@@ -43,16 +43,28 @@ Silver you earn 40% from Gen 1 and 10% from Gen 2–4 (of the upgrade)."*
 So the commissionable base is the **upgrade purchase amount**, and a payout is
 generated for each qualifying ancestor when the upgrade is confirmed.
 
-## Rates
+## Rates, corrected
 
-| Generation | Commission rate on the upgrade amount |
-|------------|---------------------------------------|
-| Gen 1      | **40%**                               |
-| Gen 2      | **10%**                               |
-| Gen 3      | **10%**                               |
-| Gen 4      | **10%**                               |
+The screenshots above show the member app's own blurb. Live data is better evidence than
+marketing copy, and it disagrees: the AURA RUN **admin** panel's Commissions table, read
+2026-11-01 against real payout rows (dates, emails, generations, amounts, all `CREDITED`), shows
+a 25 USDT Silver upgrade consistently paying **5 / 2.5 / 2.5 / 2.5 USDT** — **20% / 10% / 10% /
+10%**, not 40/10/10/10 — across several unrelated upline chains the same day.
 
-Shown in-app as "Commission rate — 40% / 10% (Gen 1 / Gen 2–4)".
+| Generation | In-app blurb (screenshot) | Admin commission records (live, 2026-11-01) |
+|------------|---------------------------|----------------------------------------------|
+| Gen 1      | 40%                       | **20%**                                       |
+| Gen 2      | 10%                       | 10%                                           |
+| Gen 3      | 10%                       | 10%                                           |
+| Gen 4      | 10%                       | 10%                                           |
+
+`src/features/referrals/rules.ts` now uses 20/10/10/10 — the figure with real payouts behind it.
+
+**Open, not resolved:** whether the badge was simply wrong, or the rate changed at some point and
+every record pulled so far happens to postdate the change. The samples checked were all from one
+day (2026-11-01) and one upline shape; confirming needs commission rows spanning different dates
+(ideally near the app's early registrations) and a read of the admin's own "Commission Settings"
+page, which was not opened during this pass.
 
 ## Eligibility to *earn* (per ancestor, evaluated at payout time)
 
@@ -88,7 +100,8 @@ Rebuild targets for the member-facing side:
 
 - **Total earned** (USDT, lifetime).
 - **Team size** across all generations.
-- **Commission rate** badge (40% / 10%).
+- **Commission rate** badge — shows 40% / 10% in the member app; the real paid rate confirmed
+  from admin commission records is 20% / 10% (see "Rates, corrected" above).
 - **Membership** state + renewal (active-until date, renew 25 USDT).
 - **Path to Gold** progress (N / 5 directs upgraded).
 - **Invite link** with a per-member ref code (`?ref=XXXXXXXX`).
