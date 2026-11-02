@@ -7,8 +7,10 @@ import type { PayoutCurrency, ReferralProgramId } from './types';
  * commission is booked. Rates are basis points so the split stays exact in integer units; amounts
  * are bigint in the token's smallest unit (18-decimal USDT and ALLI on BSC).
  *
- * Rates for Garden, Market and Card are proposals the back office will own as configuration; they
- * are here so the app can show them and the server has a default.
+ * `ratesBps` here are DEFAULTS. The server's `referral_rates` table (migration 007) is authoritative:
+ * a rate set there takes over from its effective date, and each commission row records the rate it
+ * was booked at. The app reads the live rates from `GET /v1/referrals/rates` and falls back to these
+ * until it has them. Rates for Garden, Market and Card are proposals the client will tune.
  */
 export type ProgramRules = {
   program: ReferralProgramId;
@@ -30,8 +32,7 @@ export const REFERRAL_RULES: Record<ReferralProgramId, ProgramRules> = {
     program: 'run',
     codePrefix: 'RUN',
     title: 'ALLI RUN',
-    trigger:
-      "Paid when someone in your Run team upgrades their shoe to Silver: 20% to Gen 1, 10% each to Gen 2–4.",
+    trigger: 'Paid when someone in your Run team upgrades their shoe to Silver.',
     ratesBps: [2000, 1000, 1000, 1000],
     currency: 'USDT',
     live: true,
@@ -70,9 +71,78 @@ export const REFERRAL_RULES: Record<ReferralProgramId, ProgramRules> = {
 
 export const PROGRAM_ORDER: ReferralProgramId[] = ['run', 'garden', 'market', 'card'];
 
+/** The rates in force, per program. */
+export type ReferralRates = Record<ReferralProgramId, readonly number[]>;
+
+export function defaultRates(): ReferralRates {
+  return {
+    run: REFERRAL_RULES.run.ratesBps,
+    garden: REFERRAL_RULES.garden.ratesBps,
+    market: REFERRAL_RULES.market.ratesBps,
+    card: REFERRAL_RULES.card.ratesBps,
+  };
+}
+
+/** Deepest generation a program may pay. A tree can be deeper; only this many earn. */
+export const MAX_GENERATIONS = 8;
+
+/**
+ * Whether a rate set is one the server will accept. Null when it is fine, otherwise why not.
+ * The sum is bounded because the rates are shares of one purchase: past 100% the project would pay
+ * out more than the buyer paid.
+ */
+export function validateRates(ratesBps: readonly number[]): string | null {
+  if (!Array.isArray(ratesBps) || ratesBps.length < 1) return 'Give at least one generation a rate.';
+  if (ratesBps.length > MAX_GENERATIONS) return `At most ${MAX_GENERATIONS} generations can earn.`;
+  if (!ratesBps.every((bps) => Number.isInteger(bps) && bps >= 0 && bps <= 10_000)) {
+    return 'Each rate is a whole number of basis points between 0 and 10,000 (100 = 1%).';
+  }
+  if (ratesBps.reduce((a, b) => a + b, 0) > 10_000) return 'The rates add up to more than 100% of the purchase.';
+  return null;
+}
+
+const pct = (bps: number) => `${(bps / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}%`;
+
+/**
+ * "20% to Gen 1, 10% each to Gen 2–4": the rates in words, grouping neighbours that pay the same.
+ * Generated, never typed, so the screen cannot say one thing while the server pays another.
+ */
+export function describeRates(ratesBps: readonly number[]): string {
+  const parts: string[] = [];
+  for (let i = 0; i < ratesBps.length; ) {
+    let j = i;
+    while (j + 1 < ratesBps.length && ratesBps[j + 1] === ratesBps[i]) j += 1;
+    parts.push(i === j ? `${pct(ratesBps[i]!)} to Gen ${i + 1}` : `${pct(ratesBps[i]!)} each to Gen ${i + 1}–${j + 1}`);
+    i = j + 1;
+  }
+  return parts.join(', ');
+}
+
+/** What pays, then how much, for the program screens. The card's proposal states its own terms. */
+export function triggerText(program: ReferralProgramId, ratesBps: readonly number[]): string {
+  const rules = REFERRAL_RULES[program];
+  if (program === 'card' || ratesBps.length === 0) return rules.trigger;
+  return `${rules.trigger} ${describeRates(ratesBps)}.`;
+}
+
+/** "20% of their Silver upgrade": the one-line promise on banners and the share sheet. */
+export function youGetText(program: ReferralProgramId, ratesBps: readonly number[]): string {
+  const first = ratesBps[0];
+  if (first === undefined) return '';
+  switch (program) {
+    case 'run':
+      return `${pct(first)} of their Silver upgrade`;
+    case 'garden':
+      return `${pct(first)} of their seed purchases`;
+    case 'market':
+      return `${pct(first)} of every order they place`;
+    case 'card':
+      return 'Proposed: 5 USDT per activation';
+  }
+}
+
 /** "20% / 10%", "1% / 0.5%": Gen 1 then the deeper rate(s), as the hub prints them. */
 export function formatRates(ratesBps: readonly number[]): string {
-  const pct = (bps: number) => `${(bps / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}%`;
   const [first, ...rest] = ratesBps;
   if (first === undefined) return '—';
   const deeper = [...new Set(rest)];

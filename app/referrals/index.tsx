@@ -6,7 +6,7 @@ import { Card, EmptyState, IconTile, Pill, Screen, ScreenHeader, StatTile, Text 
 import { PROGRAM_ORDER } from '@/features/referrals/rules';
 import { useReferralStore } from '@/features/referrals/store';
 import type { ProgramSummary } from '@/features/referrals/types';
-import { PROGRAM_COPY, ratesLabel, STATUS_PILL } from '@/features/referrals/ui';
+import { PROGRAM_COPY, ratesLabel, STATUS_PILL, useRates } from '@/features/referrals/ui';
 import { colors, fonts, spacing } from '@/theme';
 import { formatMoney, formatToken } from '@/utils/format';
 
@@ -68,6 +68,7 @@ export default function ReferralHubScreen() {
 
 function ProgramCard({ p, onPress }: { p: ProgramSummary; onPress: () => void }) {
   const copy = PROGRAM_COPY[p.program];
+  const rates = useRates();
   const status = STATUS_PILL[p.status];
   const earned =
     p.earned.usdt || !p.earned.alli ? formatMoney(p.earned.usdt) : `${formatToken(p.earned.alli)} ALLI`;
@@ -91,7 +92,7 @@ function ProgramCard({ p, onPress }: { p: ProgramSummary; onPress: () => void })
         <View style={styles.stats}>
           <StatTile kind="bare" label="Earned" value={earned} color={colors.ok} />
           <StatTile kind="bare" label="Team" value={String(p.teamSize)} />
-          <StatTile kind="bare" label="Rate" value={ratesLabel(p.program).replace(/ \/ /g, '/')} color={colors.redHot} />
+          <StatTile kind="bare" label="Rate" value={ratesLabel(rates, p.program).replace(/ \/ /g, '/')} color={colors.redHot} />
         </View>
       )}
       <Pill label={status.label} color={status.color} />

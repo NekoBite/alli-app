@@ -246,6 +246,7 @@ GET  /v1/market/products                  → catalogue (public)
 GET  /v1/market/orders · /v1/market/orders/:id → the user's orders
 POST /v1/market/orders                    → priced server-side, created in pending-payment
 
+GET  /v1/referrals/rates                  → commission rates in force, per program (public); every rate on screen is built from it
 GET  /v1/referrals                        → hub: totals and one summary per program
 GET  /v1/referrals/:program               → code, link, team by generation, qualification, roll-up
 GET  /v1/referrals/:program/downline      → masked members for the tree views
@@ -269,7 +270,8 @@ balance on the sign-in that creates the account.
 
 Referral commissions (`server/src/referrals/`) are booked when a purchase is fulfilled, with the
 same `splitCommission` the app uses: one row per generation, including treasury rows, idempotent
-per payment. ALLI RUN pays on a member's first upgrade from Leather; Garden on seed purchases;
+per payment. The rates come from `referral_rates` (migration 007), the set in force at that moment,
+and each row records the `rate_bps` it was booked at; the code's `REFERRAL_RULES` are only defaults. ALLI RUN pays on a member's first upgrade from Leather; Garden on seed purchases;
 Market on orders, held until the return window closes (`payable_at`). Qualification is judged at
 fulfilment. The hub's "paid out" is commission released for payout; on-chain claims go through
 `ReferralPayout` once a root publisher exists.

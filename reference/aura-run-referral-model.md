@@ -43,28 +43,50 @@ Silver you earn 40% from Gen 1 and 10% from Gen 2–4 (of the upgrade)."*
 So the commissionable base is the **upgrade purchase amount**, and a payout is
 generated for each qualifying ancestor when the upgrade is confirmed.
 
-## Rates, corrected
+## Rates: they changed, around 1 Nov 2026
 
-The screenshots above show the member app's own blurb. Live data is better evidence than
-marketing copy, and it disagrees: the AURA RUN **admin** panel's Commissions table, read
-2026-11-01 against real payout rows (dates, emails, generations, amounts, all `CREDITED`), shows
-a 25 USDT Silver upgrade consistently paying **5 / 2.5 / 2.5 / 2.5 USDT** — **20% / 10% / 10% /
-10%**, not 40/10/10/10 — across several unrelated upline chains the same day.
+The in-app blurb ("40% from Gen 1, 10% from Gen 2–4") was right when the screenshot was taken. The
+admin panel's Commissions ledger, read 2026-11-02, shows Gen 1 changing recently while Gen 2–4 never
+moved. On a 25 USDT Silver upgrade:
 
-| Generation | In-app blurb (screenshot) | Admin commission records (live, 2026-11-01) |
-|------------|---------------------------|----------------------------------------------|
-| Gen 1      | 40%                       | **20%**                                       |
-| Gen 2      | 10%                       | 10%                                           |
-| Gen 3      | 10%                       | 10%                                           |
-| Gen 4      | 10%                       | 10%                                           |
+| Period (admin panel's time; its zone is not shown) | Gen 1 | Gen 2–4 | Paid, Gen 1 / 2 / 3 / 4 |
+|---|---|---|---|
+| 28 Oct – 31 Oct 2026 | **40%** | 10% each | 10 / 2.5 / 2.5 / 2.5 USDT |
+| from 1 Nov 2026, 11:29 at the latest | **20%** | 10% each | 5 / 2.5 / 2.5 / 2.5 USDT |
 
-`src/features/referrals/rules.ts` now uses 20/10/10/10 — the figure with real payouts behind it.
+Evidence, two independent reads that agree:
 
-**Open, not resolved:** whether the badge was simply wrong, or the rate changed at some point and
-every record pulled so far happens to postdate the change. The samples checked were all from one
-day (2026-11-01) and one upline shape; confirming needs commission rows spanning different dates
-(ideally near the app's early registrations) and a read of the admin's own "Commission Settings"
-page, which was not opened during this pass.
+- The ledger's rows: 28, 29 and 30 Oct all Gen 1 = 40% = 10 USDT; 1 Nov all Gen 1 = 20% = 5 USDT.
+- One member's profile: five Gen 1 commissions totalling 35 USDT, the two oldest on 31 Oct (13:33:12
+  and 13:42:41) at 10 USDT each, the three newest on 1 Nov (11:29:40, 11:35:05, 13:46:58) at 5 each.
+  The same beneficiary, generation and tier paid two different rates, so the rate is a setting that
+  changed over time, not something tied to the member.
+
+So the cut happened between 31 Oct 13:42 and 1 Nov 11:29. **Who changed it and why is not known:** the
+Admin Logs and Commission Settings pages are not visible to the credential available, and the client
+has been asked.
+
+Which rate ALLI launches with is the client's decision. Rates are therefore configuration, not code:
+`referral_rates` (migration 007) holds a rate set with an effective date, each commission records the
+rate it was booked at, and `REFERRAL_RULES` carries only the default, currently 20/10/10/10 (the live
+rate). Changing it later is a data change, not a release.
+
+`tools/aura-migration/crawl-admin.mjs` writes `rates.json` from the full ledger: every rate seen and
+where each generation's rate changed, so earlier changes, if any, will show up.
+
+## Other things the live panel shows
+
+- **Commissions are booked one second after the upgrade payment** and credited to the beneficiary's
+  internal USDT balance. They are ledger entries; money moves on chain only at withdrawal.
+- **The profile's "Direct referrals (N)" list labels its rows Gen 1, Gen 2, Gen 3… in order**, in every
+  profile read. N direct referrals cannot be N different generations, so the badge is a row counter, not
+  a generation. Do not copy it.
+- **A sponsor appears to fund the recruit's upgrade.** In one profile, each commission follows a 25 USDT
+  withdrawal by the sponsor within a minute, and the recruit's 25 USDT deposit arrives seconds after that
+  withdrawal. Whether the recruits are separate people cannot be told from the panel. It bears on
+  self-referral and multi-account controls, which the sponsor graph alone (acyclic) does not give.
+- **Detail pages are capped**: 10 commissions, 10 withdrawals and 15 transactions per profile, however
+  many exist. The Commissions list is the complete ledger.
 
 ## Eligibility to *earn* (per ancestor, evaluated at payout time)
 
@@ -100,8 +122,8 @@ Rebuild targets for the member-facing side:
 
 - **Total earned** (USDT, lifetime).
 - **Team size** across all generations.
-- **Commission rate** badge — shows 40% / 10% in the member app; the real paid rate confirmed
-  from admin commission records is 20% / 10% (see "Rates, corrected" above).
+- **Commission rate** badge — 40% / 10% when the member app was captured; 20% / 10% since about
+  1 Nov 2026 (see "Rates: they changed" above). Show whatever `referral_rates` holds, never a typed number.
 - **Membership** state + renewal (active-until date, renew 25 USDT).
 - **Path to Gold** progress (N / 5 directs upgraded).
 - **Invite link** with a per-member ref code (`?ref=XXXXXXXX`).

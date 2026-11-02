@@ -2,12 +2,17 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { currentUser, requireUser } from '../auth/middleware.ts';
+import { allRates } from './rates.ts';
 import { attribute, downline, hub, programDetail } from './service.ts';
 
 const Program = z.object({ program: z.enum(['run', 'garden', 'market', 'card']) });
 
 /** Referral programs (docs/referral-programs.md, wireframes 6.1–6.7). */
 export async function referralRoutes(app: FastifyInstance): Promise<void> {
+  // The commission rates in force now, per program. Public and cheap: the app builds every
+  // "20% of their upgrade" line from these, so the screen cannot disagree with what is paid.
+  app.get('/v1/referrals/rates', async () => allRates());
+
   app.get('/v1/referrals', {
     preHandler: requireUser,
     handler: async (request) => hub(currentUser(request).id),

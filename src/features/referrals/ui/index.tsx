@@ -3,7 +3,8 @@ import { StyleSheet, View } from 'react-native';
 import { Pill, Text } from '@/components';
 import type { ShoeTier } from '@/features/run/shoes';
 import { colors } from '@/theme';
-import { formatRates, REFERRAL_RULES } from '../rules';
+import { formatRates, triggerText, youGetText, type ReferralRates } from '../rules';
+import { useReferralStore } from '../store';
 import type { ProgramStatus, ReferralProgramId } from '../types';
 
 export const TIER_COLOR: Record<ShoeTier, string> = {
@@ -25,40 +26,49 @@ export const STATUS_PILL: Record<ProgramStatus, { label: string; color: string }
 /** Short program copy for cards, the share sheet and the per-feature banners. */
 export const PROGRAM_COPY: Record<
   ReferralProgramId,
-  { glyph: string; name: string; tagline: string; youGet: string; friendGets: string }
+  { glyph: string; name: string; tagline: string; friendGets: string }
 > = {
   run: {
     glyph: 'R',
     name: 'ALLI RUN',
     tagline: 'Earn when your team upgrades to Silver',
-    youGet: '20% of their Silver upgrade',
     friendGets: 'Free wallet + Leather NFT shoe',
   },
   garden: {
     glyph: 'G',
     name: 'Garden',
     tagline: 'Earn when your team buys seeds',
-    youGet: '20% of their seed purchases',
     friendGets: 'Free wallet + a place in your Garden team',
   },
   market: {
     glyph: 'M',
     name: 'Marketplace',
     tagline: 'Earn from fees on your team’s orders',
-    youGet: '1% of every order they place',
     friendGets: 'Free wallet + 10% back in stars on ALLI orders',
   },
   card: {
     glyph: 'C',
     name: 'ALLI Card',
     tagline: 'Reserve your code · waitlist',
-    youGet: 'Proposed: 5 USDT per activation',
     friendGets: 'A place on the card waitlist',
   },
 };
 
-export function ratesLabel(program: ReferralProgramId): string {
-  return formatRates(REFERRAL_RULES[program].ratesBps);
+/**
+ * The commission rates in force, and the text built from them. The numbers are never typed into
+ * screen copy: they come from the server's rate table, so a rate the client changes changes here.
+ */
+export function useRates(): ReferralRates {
+  return useReferralStore((s) => s.rates);
+}
+
+export const ratesLabel = (rates: ReferralRates, program: ReferralProgramId): string => formatRates(rates[program]);
+export const youGet = (rates: ReferralRates, program: ReferralProgramId): string => youGetText(program, rates[program]);
+export const triggerOf = (rates: ReferralRates, program: ReferralProgramId): string => triggerText(program, rates[program]);
+
+/** "20% of their Silver upgrade" for a banner. */
+export function useYouGet(program: ReferralProgramId): string {
+  return youGet(useRates(), program);
 }
 
 /** The line every share surface carries (docs/referral-programs.md §4). */

@@ -15,6 +15,7 @@ import { WeeklyQuestStrip } from '@/features/quests/ui';
 import type { PlotView } from '@/features/garden/types';
 import { TreePage } from '@/features/garden/ui';
 import { colors, spacing } from '@/theme';
+import { useYouGet } from '@/features/referrals/ui';
 
 type Page = { key: string; view?: PlotView };
 
@@ -30,6 +31,7 @@ function rank(view: PlotView): number {
 }
 
 export default function GardenScreen() {
+  const youGetGarden = useYouGet('garden');
   const router = useRouter();
   const { width } = useWindowDimensions();
   const { refresh, views, carbon, error } = useGardenStore();
@@ -92,7 +94,7 @@ export default function GardenScreen() {
         <ScreenHeader eyebrow="Plant to earn" title="Garden" right={<Pill label="Beta" />} />
         <InviteBanner
           title="Invite gardeners"
-          subtitle="20% of their seed purchases"
+          subtitle={youGetGarden}
           href="/referrals/garden"
         />
       </View>

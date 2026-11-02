@@ -1,5 +1,5 @@
 import { isMock } from '@/config/env';
-import { inviteLink, REFERRAL_RULES } from '@/features/referrals/rules';
+import { defaultRates, inviteLink, REFERRAL_RULES, type ReferralRates } from '@/features/referrals/rules';
 import type {
   Downline,
   DownlineMember,
@@ -20,6 +20,11 @@ export interface ReferralApi {
   getDownline(program: ReferralProgramId): Promise<Downline>;
   /** Binds the signed-in member to the sponsor behind `code`, in that code's program only. */
   attribute(code: string): Promise<{ program: ReferralProgramId }>;
+  /**
+   * The commission rates in force now. Every "20% of their upgrade" line on screen is built from
+   * these, so what the app says and what the server pays cannot disagree.
+   */
+  getRates(): Promise<ReferralRates>;
 }
 
 const live: ReferralApi = {
@@ -27,6 +32,7 @@ const live: ReferralApi = {
   getProgram: (program) => request(`/v1/referrals/${program}`),
   getDownline: (program) => request(`/v1/referrals/${program}/downline`),
   attribute: (code) => request('/v1/referrals/attribute', { method: 'POST', body: { code } }),
+  getRates: () => request('/v1/referrals/rates', { anonymous: true }),
 };
 
 const CODES: Record<ReferralProgramId, string> = {
@@ -125,6 +131,7 @@ const mock: ReferralApi = {
       total: MOCK_DETAIL[program].teamSize,
       members: program === 'run' ? RUN_DOWNLINE : RUN_DOWNLINE.slice(0, program === 'card' ? 0 : 4),
     }),
+  getRates: () => delay<ReferralRates>(defaultRates(), 100),
   async attribute(code) {
     const prefix = code.split('-')[0]?.toUpperCase();
     const hit = Object.values(REFERRAL_RULES).find((r) => r.codePrefix === prefix);

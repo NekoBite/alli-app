@@ -88,7 +88,7 @@ POST /v1/payments/intents  { kind, … }     → a signed PaymentRouter quote (r
 GET  /v1/payments/intents/:id              → { status, txHash }
 POST /v1/garden/plots      { seedId, intentId? }
 GET  /v1/market/products · /v1/market/orders[/:id] · POST /v1/market/orders
-GET  /v1/referrals · /v1/referrals/:program · /v1/referrals/:program/downline
+GET  /v1/referrals · /v1/referrals/:program · /v1/referrals/:program/downline · /v1/referrals/rates
 POST /v1/referrals/attribute { code }
 GET  /v1/wallet/account · /v1/wallet/transactions · /v1/wallet/prices
 ```
@@ -102,6 +102,11 @@ or quote key configured every purchase answers 503 `payments_unavailable`, and p
 
 **A run spends a credit.** `submitRun` refuses (402 `no_run_credits`) when the balance is zero and
 writes −1 against the run inside its transaction. `SIGNUP_RUN_CREDITS` grants a starting balance.
+
+**Commission rates are data.** `referral_rates` (migration 007) holds a rate set per program with an
+effective date; `ratesAt` returns the set in force, else the code defaults. `setRates` writes a whole set:
+refused if it adds up to more than 100%, and never overwrites an existing moment. Each commission stores
+the `rate_bps` it was booked at. Until the admin dashboard calls `setRates`, an operator does.
 
 ## Correctness decisions worth knowing
 
