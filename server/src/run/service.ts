@@ -226,31 +226,23 @@ export async function submitRun(userId: string, input: SubmitRunInput): Promise<
     // One credit per recorded run, checked under the same lock (docs/architecture.md §2).
     await assertCanRun(db, userId);
 
-    // Recompute from the raw track. The identical function the phone ran.
+    // Distance and moving time come from the track, for display and the run history. They are not
+    // used to judge the run: steps are credited without GPS, so a track may be empty.
     const stats = summarizeTrack(input.track);
 
-    // And re-credit the steps against that track. A client that reports a
-    // million steps over a track that never moved credits none of them, which
-    // is what stops a shaken phone completing the quest and minting a star.
-    const steps = creditStepSamples(input.track, input.stepSamples ?? []).steps;
+    // Re-credit the steps from the raw pedometer samples, bounded by cadence. A client that reports
+    // a million steps in a minute credits what a person could have walked in it. Nothing here
+    // verifies the pedometer itself: that is attestation's job, and the once-a-day quest is what
+    // caps emission per account.
+    const steps = creditStepSamples(input.stepSamples ?? [], input.startedAt).steps;
 
     const stepsToday = await stepsOn(db, userId, input.day);
     const starsEarnedToday = await starsEarnedOn(db, userId, input.day);
     const shoeTier = await shoeTierOf(db, userId);
 
     const reward = calculateReward(
-      {
-        distanceMetres: stats.distanceMetres,
-        movingSeconds: stats.movingSeconds,
-        track: input.track,
-        steps,
-      },
-      {
-        stepsToday,
-        starsEarnedToday,
-        shoeTier,
-        rejectedPoints: stats.rejectedPoints,
-      },
+      { distanceMetres: stats.distanceMetres, steps },
+      { stepsToday, starsEarnedToday, shoeTier },
     );
 
     const { rows: inserted } = await db.query<{ id: string; started_at: string; ended_at: string | null }>(

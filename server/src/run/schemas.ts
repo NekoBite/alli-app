@@ -20,8 +20,8 @@ const MAX_TRACK_POINTS = 20_000;
 
 /**
  * The pedometer's running total for the run, at a moment in time. Sent as
- * samples rather than one number so the server can pair each one with the
- * ground the track says was covered while those steps were taken.
+ * samples rather than one number so the server can re-credit the run itself and
+ * bound the cadence of each window.
  */
 const StepSampleSchema = z.object({
   timestamp: z.number().int().positive(),
@@ -32,11 +32,12 @@ export const SubmitRunSchema = z.object({
   clientRunId: z.string().min(1).max(128),
   startedAt: z.number().int().positive(),
   endedAt: z.number().int().positive().optional(),
+  /** Optional in effect: steps are credited without GPS, so a run with no fixes is valid. */
   track: z.array(GeoPointSchema).max(MAX_TRACK_POINTS),
   /**
    * Absent from a device with no pedometer, which costs the run its star but
    * not its points. A credited step count is deliberately NOT accepted here:
-   * the server derives it from these samples and the track.
+   * the server derives it from these samples.
    */
   stepSamples: z.array(StepSampleSchema).max(MAX_TRACK_POINTS).optional(),
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'day must be YYYY-MM-DD'),

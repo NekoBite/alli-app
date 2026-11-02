@@ -16,7 +16,7 @@ sensor data they can fake. Everything that decides how much ALLI exists must liv
 | GPS capture | ✅ records the track | — |
 | Pedometer capture | ✅ records raw totals | — |
 | Track filtering | ✅ preview | ✅ **authoritative** — re-run on the raw track |
-| Step credit (steps vs. ground covered) | ✅ preview | ✅ **authoritative** — re-run on the samples |
+| Step credit (pedometer samples, bounded by cadence) | ✅ preview | ✅ **authoritative** — re-run on the samples |
 | Reward calculation | ✅ preview | ✅ **authoritative** |
 | The day's step total | shown | ✅ summed from validated runs |
 | Star ledger | cached | ✅ source of truth |
@@ -29,10 +29,13 @@ sensor data they can fake. Everything that decides how much ALLI exists must liv
 | Payment confirmation | — | ✅ watches the chain |
 | Card actions | requests | ✅ proxies to the issuer |
 
-Note which way round the two sensors work: **steps are the reward basis and distance is the
-evidence.** GPS is the harder of the two to fake convincingly over a whole route, so it vouches for
-the pedometer rather than paying out itself — which also means a spoofed track with no steps behind
-it earns nothing.
+**Steps are the reward basis, and GPS plays no part in judging them.** An earlier design had GPS
+vouch for the pedometer: steps were credited only where the track showed movement. The client
+removed that on 2026-11-02 so that people walking in a small area, on a treadmill or round a room,
+where GPS cannot see them move, are not discouraged. GPS is still recorded, for the route and the
+distance, and on Android its background task is what keeps the process alive so the pedometer keeps
+counting; but it neither gates nor judges a run, and a run with no track at all is valid. See §3 for
+what that leaves.
 
 `src/features/run/rewards.ts` and `src/features/run/steps.ts` are written as pure functions
 precisely so the backend can run the identical code on the raw track. Keep the two in sync — a
@@ -87,46 +90,46 @@ Never mint per run. The exchange is a deliberate, rate-limited, user-initiated s
 
 ## 3. Anti-cheat, in layers
 
-Client-side filtering (already implemented in `geo.ts`, `steps.ts` and `rewards.ts`, and re-run
-server-side on the raw inputs):
+Since 2026-11-02 the sensor-side checks on steps are gone: steps are credited as the pedometer
+reports them (`steps.ts`), re-run on the server from the raw samples. What remains:
 
 | Check | Threshold | Catches |
 |---|---|---|
-| GPS accuracy | drop fixes > 30 m | urban canyon noise |
-| Hop distance | drop hops > 120 m | GPS teleports |
-| Moving speed | ≥ 0.5 m/s counts as moving | standing still |
-| Average pace | 0.7–6.0 m/s | cycling, driving, treadmill spoofing |
-| Stride length | ≤ 2.5 m per step | phone in a vehicle |
-| Rejected fraction | ≤ 35% of fixes | unusable tracks |
-| Minimum distance | 300 m | micro-run farming |
-| Step window | no GPS movement, no steps | a phone shaken in a chair |
-| Step ceiling | ≤ 1 step per 0.3 m covered | an inflated pedometer total |
+| Cadence ceiling | ≤ 300 steps/min per window, excess dropped | a total no person could have walked in the time; a lone enormous sample |
 | No steps, no stars | distance alone pays nothing | GPS spoofed with nobody walking |
 | Quest pays once a day | 1 star × tier | account farming rate |
 | Run credits | one per recorded run | how often a run can even be submitted |
 
-Any flag zeroes the run. Partial credit gives a cheat a dial to tune against.
+**Be clear about what this means.** Nothing now stops a phone being shaken in a chair, and the
+cadence ceiling stops only the lazy case: a client willing to forge timestamps passes it. The
+GPS-based rules that used to catch this (pace, stride, minimum distance, "no movement, no steps",
+the step ceiling per metre) were removed on the client's instruction, to stop penalising people who
+walk where GPS cannot follow. `geo.ts` still filters fixes for the route and distance shown to the
+user; it no longer affects a reward. If shaken-phone farming becomes a problem, the answer is not to
+put GPS back in front of every step but to use the layers below, and to bound it economically.
 
-This is the cheap layer. It raises cost; it does not stop a determined attacker with a rooted
-device and a mock-location provider. The layers that actually matter:
+The layers that actually matter:
 
 1. **Device attestation** — Play Integrity API, App Attest. Reject unattested devices for rewards
-   (still let them use the app).
-2. **Account-level analysis** — same device fingerprint across many accounts, runs that repeat the
-   same route with implausible regularity, sign-up velocity from one IP.
-3. **Economic limits** — the once-a-day quest is the real backstop. Even a perfect spoofer is
-   bounded to one quest per account per day, which makes farming a question of account-creation
-   cost multiplied by the tier they can afford.
-4. **Manual review** — flag the top 0.1% of earners weekly and look.
+   (still let them use the app). Today the server checks only that a token is *present*.
+2. **Platform step data** — HealthKit and Health Connect record who wrote each step (a person's
+   device, or another app, or a manual entry). Reading steps from them, and refusing manual or
+   third-party writes, is a stronger signal than the raw pedometer stream and needs no GPS.
+3. **Account-level analysis** — same device fingerprint across many accounts, implausible
+   regularity in step timing, sign-up velocity from one IP.
+4. **Economic limits** — the once-a-day quest is the real backstop. A perfect spoofer is bounded to
+   one quest per account per day, which makes farming a question of account-creation cost
+   multiplied by the tier they can afford.
+5. **Manual review** — flag the top 0.1% of earners weekly and look.
 
 ## 4. Token economics
 
 Placeholder numbers from `REWARD_RULES`, `SHOES` and `SEEDS`:
 
 **Emission**
-- One quest a day: 6,000 GPS-verified steps → 1 star × the shoe multiplier
+- One quest a day: 6,000 steps → 1 star × the shoe multiplier
 - 1 star = 1,000 ALLI, so a day is **1,000 ALLI on Leather, 3,000 on Silver, 5,000 on Gold**
-- Distance is measured and shown but never paid: it is the witness for the steps, not the reward
+- Distance is measured and shown but never paid and never used to judge a run
 - Garden: 0.02–0.5 stars per thriving night depending on the seed, for thirty nights, times a
   streak bonus (up to +50%) and, for ALLI seeds, the carbon multiplier (0.6–1.4×)
 - Garden run bonus: the best thriving tree's bonus, up to +20% — **not wired into the quest**, see §6

@@ -41,11 +41,11 @@ export interface RunApi {
   getEntitlement(): Promise<RunEntitlement>;
   getHistory(): Promise<RunSummary[]>;
   /**
-   * Uploads the raw track. The server re-runs validation and returns the
-   * authoritative reward — the client's own figure is only a preview. Accepting
-   * the run is also what spends a run credit.
+   * Uploads the raw pedometer samples (and the track, if there is one). The server re-credits the
+   * steps and returns the authoritative reward — the client's own figure is only a preview.
+   * Accepting the run is also what spends a run credit.
    */
-  submitRun(session: RunSession, rejectedPoints: number): Promise<RunSummary>;
+  submitRun(session: RunSession): Promise<RunSummary>;
   /**
    * Burns stars and sends the matching ALLI on-chain.
    *
@@ -83,10 +83,8 @@ const live: RunApi = {
    * of them from `track` and `stepSamples` with the same functions that produced
    * the on-screen preview, so there is nowhere for a modified client to put a
    * better number. The pedometer's raw totals have to be sent — the server
-   * cannot read the sensor — but they are re-credited against the ground the
-   * track says was covered, so a fabricated total buys nothing.
-   * `rejectedPoints` stays in the signature only because the mock needs it to
-   * reproduce the preview offline.
+   * cannot read the sensor — and are re-credited, bounded by cadence, from the
+   * samples. GPS is not used to judge the steps, so the track is optional.
    */
   submitRun: (session) =>
     request('/v1/run/runs', {
@@ -167,17 +165,16 @@ const mock: RunApi = {
   getEntitlement: () => delay(readEntitlement()),
   getHistory: () => delay([...mockHistory]),
 
-  async submitRun(session, rejectedPoints) {
+  async submitRun(session) {
     // Re-credited from the raw samples, exactly as the server does it — so the
     // mock is not a kinder judge than production.
-    const steps = creditStepSamples(session.track, session.stepSamples ?? []).steps;
+    const steps = creditStepSamples(session.stepSamples ?? [], session.startedAt).steps;
     const reward = calculateReward(
       { ...session, steps },
       {
         stepsToday: mockProfile.stepsToday,
         starsEarnedToday: mockProfile.starsEarnedToday,
         shoeTier: mockProfile.shoeTier,
-        rejectedPoints,
       },
     );
     // Samples are not echoed back, the same way the server does not return the

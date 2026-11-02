@@ -25,7 +25,7 @@ export const QUESTS: QuestRule[] = [
     metric: 'steps',
     kind: 'reach',
     title: 'Walk the farm',
-    blurb: 'A community step count. Every GPS-verified step on ALLI RUN counts.',
+    blurb: 'A community step count. Every step on ALLI RUN counts.',
     howTo: 'Run or walk with ALLI RUN. Your credited steps go on the pile.',
     lesson: 'A walk instead of a drive is the simplest low-carbon choice there is, and it is the one this app is built on.',
     goal: 20_000_000,

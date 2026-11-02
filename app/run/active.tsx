@@ -22,15 +22,7 @@ export default function ActiveRunScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
 
-  const preview = previewReward(
-    {
-      distanceMetres: session.distanceMetres,
-      movingSeconds: session.movingSeconds,
-      track: session.track,
-      steps: session.steps,
-    },
-    session.rejectedPoints,
-  );
+  const preview = previewReward({ distanceMetres: session.distanceMetres, steps: session.steps });
   const todayMoving = weekGoals(history).find((d) => d.isToday)?.movingSeconds ?? 0;
   const activeMinutes = (todayMoving + session.movingSeconds) / 60;
 
@@ -63,7 +55,7 @@ export default function ActiveRunScreen() {
     };
 
     try {
-      const summary = await submitRun(record, final.rejectedPoints);
+      const summary = await submitRun(record);
       router.replace({ pathname: '/run/summary', params: { id: summary.id } });
     } catch (error) {
       setSubmitting(false);
@@ -163,15 +155,14 @@ export default function ActiveRunScreen() {
       <RouteMap track={session.track} height={mapOpen ? 320 : 110} />
 
       <Text variant="mono" color={colors.inkFaint} style={styles.meta}>
-        {formatPoints(session.steps)} steps counted · {formatPoints(session.droppedSteps)} unbacked ·{' '}
-        {session.rejectedPoints} fixes dropped
+        {formatPoints(session.steps)} steps counted
+        {session.droppedSteps > 0 ? ` · ${formatPoints(session.droppedSteps)} over the cadence limit` : ''}
+        {session.rejectedPoints > 0 ? ` · ${session.rejectedPoints} GPS fixes dropped` : ''}
       </Text>
-      {session.status !== 'idle' && preview.flags.length > 0 ? (
-        <View style={styles.flags}>
-          {preview.flags.map((flag) => (
-            <Pill key={flag} label={flag} color={colors.warn} />
-          ))}
-        </View>
+      {live && session.permission === 'denied' ? (
+        <Text variant="caption" color={colors.inkDim} style={styles.meta}>
+          Location is off, so distance and the route are not recorded. Your steps still count.
+        </Text>
       ) : null}
       {live && session.background !== 'started' ? (
         <Text variant="caption" color={colors.warn} style={styles.meta}>

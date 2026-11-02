@@ -75,7 +75,7 @@ function EnterEmail() {
             <Text variant="hero" color={colors.redHot} style={styles.headline}>Earn.</Text>
           </Text>
           <Text variant="body" color={colors.inkDim}>
-            Walk 6,000 GPS-verified steps a day, grow a tree, and earn ALLI on BNB Smart Chain.
+            Walk 6,000 steps a day, grow a tree, and earn ALLI on BNB Smart Chain.
           </Text>
           <Pill kind="status" color={colors.ok} label="Free wallet + Leather NFT shoe on sign-up" />
           {referralCode ? (

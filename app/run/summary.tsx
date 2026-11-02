@@ -42,7 +42,6 @@ export default function RunSummaryScreen() {
   const { reward } = run;
   const ended = new Date(run.endedAt ?? run.startedAt);
   const time = `${String(ended.getHours()).padStart(2, '0')}:${String(ended.getMinutes()).padStart(2, '0')}`;
-  const uncounted = Math.max(0, reward.steps - reward.eligibleSteps);
 
   return (
     <Screen
@@ -84,7 +83,7 @@ export default function RunSummaryScreen() {
         title="How this was calculated"
         lines={[
           { label: 'Steps that counted', value: formatPoints(reward.eligibleSteps) },
-          { label: 'Validated distance', value: `${formatDistance(reward.eligibleMetres)} km` },
+          { label: 'Distance (GPS, not paid)', value: `${formatDistance(reward.distanceMetres)} km` },
           { label: 'Steps today', value: `${formatPoints(reward.stepsToday)} / ${formatPoints(reward.questGoal)}` },
           { label: 'Quest reward', value: `${formatStars(reward.baseStars)} ★` },
           { label: 'Shoe multiplier', value: `×${reward.shoeMultiplier.toFixed(1)}` },
@@ -92,13 +91,8 @@ export default function RunSummaryScreen() {
         total={{ label: 'Stars awarded', value: `${formatStars(reward.stars)} ★` }}
       />
 
-      {uncounted > 0 || reward.flags.length > 0 ? (
+      {reward.flags.length > 0 ? (
         <View style={styles.notes}>
-          {uncounted > 0 ? (
-            <Text variant="mono" color={colors.inkFaint}>
-              {formatPoints(uncounted)} steps not counted — no GPS movement backed them.
-            </Text>
-          ) : null}
           {reward.flags.map((flag) => (
             <Text key={flag} variant="caption" color={colors.warn}>
               {explainFlag(flag)}
@@ -108,7 +102,7 @@ export default function RunSummaryScreen() {
       ) : null}
       {!reward.questPaid && !reward.questCompleted ? (
         <Text variant="caption" color={colors.inkDim} style={styles.notes}>
-          {formatPoints(Math.max(0, reward.questGoal - reward.stepsToday))} GPS-verified steps left
+          {formatPoints(Math.max(0, reward.questGoal - reward.stepsToday))} steps left
           before today’s quest pays.
         </Text>
       ) : null}

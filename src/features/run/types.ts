@@ -15,9 +15,8 @@ export type RunStatus = 'idle' | 'running' | 'paused' | 'finished';
 /**
  * The pedometer's running total for the run, at a moment in time.
  *
- * Samples rather than one figure because a total on its own cannot be checked:
- * paired with the track, each one says how far the phone moved while those
- * steps were taken, which is what makes a shaken phone worth nothing. See
+ * Samples rather than one figure so the server can re-credit the run itself and
+ * bound the cadence of each window, instead of trusting a total. See
  * `creditStepSamples`.
  */
 export type StepSample = {
@@ -31,36 +30,38 @@ export type RunSession = {
   id: string;
   startedAt: number;
   endedAt?: number;
-  /** Accepted GPS fixes, already filtered for accuracy. */
+  /**
+   * Accepted GPS fixes, already filtered for accuracy. Optional in practice: a run without location
+   * permission, or somewhere GPS sees no movement, has an empty or short track and still counts.
+   */
   track: GeoPoint[];
-  /** Metres, summed from accepted points only. */
+  /** Metres, summed from accepted points only. Shown, never paid. */
   distanceMetres: number;
   /** Seconds of movement — paused and stationary time excluded. */
   movingSeconds: number;
   /**
-   * Steps the pedometer reported *and* GPS movement backed — see `steps.ts`.
-   * Used to cross-check GPS distance and to decide whether the run completed.
-   * A preview, like `distanceMetres`: the server re-credits from `stepSamples`.
+   * Steps the pedometer reported, within the cadence limit — see `steps.ts`. This is what the quest
+   * counts. A preview: the server re-credits from `stepSamples`.
    */
   steps?: number;
   /** Raw pedometer totals over the run, for the server to re-credit. */
   stepSamples?: StepSample[];
 };
 
-/** Why a run was rejected. Surfaced to the user verbatim. */
-export type RewardFlag =
-  | 'pace-too-fast'
-  | 'pace-too-slow'
-  | 'too-short'
-  | 'poor-gps'
-  | 'step-mismatch';
+/**
+ * Why a run added nothing. Surfaced to the user verbatim.
+ *
+ * There used to be GPS-based flags (pace, stride, minimum distance, poor fixes) that zeroed a run.
+ * They are gone: steps are credited as the pedometer reports them, whatever GPS made of the walk.
+ */
+export type RewardFlag = 'no-steps';
 
 export type RewardBreakdown = {
-  /** Distance that passed validation, in metres. Measured and shown, never paid. */
-  eligibleMetres: number;
-  /** GPS-backed steps the run was credited with, before validation. */
+  /** GPS distance in metres. Measured and shown; never paid and never used to judge the run. */
+  distanceMetres: number;
+  /** Steps the run was credited with. */
   steps: number;
-  /** Credited steps that passed validation and counted towards the quest. */
+  /** Steps that counted towards the quest. Equal to `steps` now that no check can zero a run. */
   eligibleSteps: number;
   /** The day's credited step total once this run is counted. */
   stepsToday: number;

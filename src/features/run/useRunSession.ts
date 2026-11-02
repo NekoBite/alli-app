@@ -50,15 +50,13 @@ export type RunSessionState = {
   /** Current pace source: m/s over moving time. */
   speedMps: number;
   rejectedPoints: number;
-  /** Steps the GPS check backed — the number the run is judged on. */
+  /** Steps credited — the number the run is judged on. */
   steps: number;
-  /** Steps the pedometer reported that GPS did not back. */
+  /** Steps over the cadence limit. Zero for any real walk. */
   droppedSteps: number;
   /** Everything the pedometer reported, for the server to re-credit. */
   rawSteps: number;
   stepSamples: StepSample[];
-  /** Distance at the last pedometer window; the base for the next one. */
-  metresAtLastStep: number;
   permission: 'unknown' | 'granted' | 'denied';
   pedometer: PedometerState;
   /**
@@ -85,7 +83,6 @@ const INITIAL: RunSessionState = {
   droppedSteps: 0,
   rawSteps: 0,
   stepSamples: [],
-  metresAtLastStep: 0,
   permission: 'unknown',
   pedometer: 'unknown',
   background: 'off',
@@ -113,7 +110,6 @@ function fromDraft(draft: RunDraft): RunSessionState {
     droppedSteps: draft.droppedSteps,
     rawSteps: draft.rawSteps,
     stepSamples: draft.stepSamples,
-    metresAtLastStep: draft.metresAtLastStep,
     resumedFromDraft: true,
   };
 }
@@ -128,7 +124,6 @@ function toDraft(state: RunSessionState): RunDraft {
     droppedSteps: state.droppedSteps,
     rawSteps: state.rawSteps,
     stepSamples: state.stepSamples,
-    metresAtLastStep: state.metresAtLastStep,
     elapsedSeconds: state.elapsedSeconds,
   };
 }
@@ -137,9 +132,11 @@ function toDraft(state: RunSessionState): RunDraft {
  * Owns one live run: permissions, the GPS and pedometer subscriptions, the
  * derived stats, and the draft that lets a run be picked up again later.
  *
- * Steps are credited against GPS movement rather than taken at face value —
- * `creditStepWindow` is what makes shaking the phone worthless. The run's
- * completion (and so its star) hangs on that number.
+ * Steps are credited as the pedometer reports them, bounded only by cadence
+ * (`creditStepWindow`); GPS is recorded for the route and distance and to keep
+ * the process alive in the background, but it neither gates nor judges a run, so
+ * a walk where GPS sees no movement counts in full. The run's completion (and so
+ * its star) hangs on the step count.
  *
  * With `EXPO_PUBLIC_MOCK_SENSORS=on` both sensors are synthesised so the screen
  * can be developed on a simulator. That flag is separate from the API's
@@ -180,8 +177,7 @@ export function useRunSession() {
 
   /**
    * `reported` is the pedometer's running total for the current subscription.
-   * `timestamp` has to come from the same clock as the track, or the server's
-   * re-credit pairs each window with the wrong stretch of ground.
+   * `timestamp` is the time of this reading; the gap since the previous one is the window.
    */
   const addSteps = useCallback((reported: number, timestamp: number = Date.now()) => {
     const delta = Math.max(0, Math.floor(reported) - consumedSteps.current);
@@ -190,20 +186,18 @@ export function useRunSession() {
 
     setState((prev) => {
       if (prev.status !== 'running') return prev;
-      const credit = creditStepWindow({
-        steps: delta,
-        metres: prev.distanceMetres - prev.metresAtLastStep,
-      });
+      // The window is as long as the time since the last sample (or the run's start), which is
+      // what bounds its cadence. The server re-credits from the same samples.
+      const since = prev.stepSamples.at(-1)?.timestamp ?? prev.startedAt;
+      const credit = creditStepWindow({ steps: delta, seconds: (timestamp - since) / 1000 });
       const rawSteps = prev.rawSteps + delta;
       return {
         ...prev,
         steps: prev.steps + credit.steps,
         droppedSteps: prev.droppedSteps + credit.dropped,
         rawSteps,
-        // The running total, not the window: the server pairs each sample with
-        // the ground covered since the previous one and re-credits from there.
+        // The running total, not the window, so the server can re-credit from scratch.
         stepSamples: [...prev.stepSamples, { timestamp, steps: rawSteps }],
-        metresAtLastStep: prev.distanceMetres,
       };
     });
   }, []);
@@ -269,8 +263,7 @@ export function useRunSession() {
    * with the app — the steps the OS counted in the meantime.
    *
    * The whole run is then re-credited from scratch with `creditStepSamples`,
-   * the same function the server runs. Patching the incremental count instead
-   * would drift across a gap, and the server's number is the one that pays.
+   * the same function the server runs, so the count shown is the one that pays.
    */
   const syncFromBackground = useCallback(async () => {
     if (useMockSensors) return;
@@ -302,7 +295,7 @@ export function useRunSession() {
         ? appendBackfill(prev.stepSamples, backfilled)
         : prev.stepSamples;
       const stats = summarizeTrack(track);
-      const credit = creditStepSamples(track, stepSamples);
+      const credit = creditStepSamples(stepSamples, prev.startedAt);
       return {
         ...prev,
         track,
@@ -314,7 +307,6 @@ export function useRunSession() {
         steps: credit.steps,
         droppedSteps: credit.dropped,
         rawSteps: stepSamples[stepSamples.length - 1]?.steps ?? prev.rawSteps,
-        metresAtLastStep: stats.distanceMetres,
       };
     });
 
@@ -331,7 +323,11 @@ export function useRunSession() {
     return () => listener.remove();
   }, [syncFromBackground]);
 
-  const startSources = useCallback(async () => {
+  /**
+   * `withLocation` is whether GPS may be used. It defaults to "unless it was refused": location no
+   * longer gates a run, so a refusal means distance and the route are not recorded and nothing else.
+   */
+  const startSources = useCallback(async (withLocation: boolean = latest.current.permission !== 'denied') => {
     // A new pedometer subscription counts from zero again.
     consumedSteps.current = 0;
 
@@ -368,16 +364,23 @@ export function useRunSession() {
       );
     }, 1000);
 
-    subscription.current = await Location.watchPositionAsync(LOCATION_OPTIONS, (loc) => {
-      addPoint({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-        timestamp: loc.timestamp,
-        accuracy: loc.coords.accuracy ?? undefined,
-        speed: loc.coords.speed ?? undefined,
-        altitude: loc.coords.altitude ?? undefined,
-      });
-    });
+    if (withLocation) {
+      try {
+        subscription.current = await Location.watchPositionAsync(LOCATION_OPTIONS, (loc) => {
+          addPoint({
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            timestamp: loc.timestamp,
+            accuracy: loc.coords.accuracy ?? undefined,
+            speed: loc.coords.speed ?? undefined,
+            altitude: loc.coords.altitude ?? undefined,
+          });
+        });
+      } catch {
+        // GPS is not needed to count steps. Carry on without it and say so.
+        setState((prev) => ({ ...prev, permission: 'denied' }));
+      }
+    }
 
     // No pedometer is not a reason to refuse the run: it costs the star, not
     // the points, and the screen says so rather than failing silently.
@@ -398,16 +401,12 @@ export function useRunSession() {
   }, [addPoint, addSteps, watchSteps]);
 
   const start = useCallback(async () => {
+    // Asked for, because the route, the distance and (on Android) background recording use it, but
+    // not required: steps are credited without GPS, so a refusal must not stop anyone running.
+    let permission: 'granted' | 'denied' = 'granted';
     if (!useMockSensors) {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setState((prev) => ({
-          ...prev,
-          permission: 'denied',
-          error: 'Location permission is required to measure a run.',
-        }));
-        return false;
-      }
+      const { status } = await Location.requestForegroundPermissionsAsync().catch(() => ({ status: 'denied' as const }));
+      permission = status === 'granted' ? 'granted' : 'denied';
     }
 
     await runDraft.clear();
@@ -417,14 +416,13 @@ export function useRunSession() {
       id: newRunId(),
       startedAt: Date.now(),
       status: 'running',
-      permission: 'granted',
+      permission,
     });
-    await startSources();
+    await startSources(permission === 'granted');
 
     if (!useMockSensors) {
-      const background = await startBackgroundLocation().catch(
-        () => 'denied' as BackgroundStatus,
-      );
+      const background: BackgroundStatus =
+        permission === 'granted' ? await startBackgroundLocation().catch(() => 'denied' as BackgroundStatus) : 'denied';
       setState((prev) => (prev.status === 'running' ? { ...prev, background } : prev));
     }
     return true;

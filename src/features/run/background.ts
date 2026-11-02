@@ -10,10 +10,10 @@ import type { GeoPoint } from './types';
  *
  * A phone goes in a pocket and the screen locks, and a foreground subscription
  * stops there: iOS suspends the app outright, Android may kill it under memory
- * pressure. Without this, a run ends the moment the user stops looking at it —
- * and because steps are only credited where GPS movement backs them, losing the
- * track in the background loses the steps too, even on Android where the
- * pedometer keeps counting.
+ * pressure. Without this, a run ends the moment the user stops looking at it.
+ * Steps no longer depend on GPS, but the location task is still what keeps the
+ * process alive: on Android the pedometer subscription dies with it, so a run
+ * recorded without background location counts steps only while the app is open.
  *
  * So the location updates move to a task the OS owns. It writes fixes to
  * storage, because a task can be woken into a process with no React tree to
