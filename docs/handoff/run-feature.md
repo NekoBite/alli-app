@@ -1,5 +1,13 @@
 # Handoff — ALLI RUN (steps → the daily quest → stars → ALLI)
 
+> **Out of date: read `README.md` and `docs/architecture.md` first.** Written 2026-09-19. Since then:
+> steps are **no longer credited against GPS movement** (2026-11-02, on the client's instruction), so
+> the "Steps are credited against ground covered" invariant and the whole "Step accuracy — what is
+> known wrong" section no longer apply; run credits, membership, payment intents, referral
+> commissions and the contracts **are** built, so "Deliberately not built" is wrong about them; and
+> the test counts below are old. This file is due a rewrite, not a patch.
+
+
 _Verified 2026-09-19 on `main` @ `5b90797`._
 
 ## Orientation

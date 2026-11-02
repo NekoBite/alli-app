@@ -19,7 +19,7 @@ import {
 import { REFERRAL_RULES } from '@/features/referrals/rules';
 import { useReferralStore } from '@/features/referrals/store';
 import type { ProgramDetail, ReferralProgramId } from '@/features/referrals/types';
-import { Disclaimer, PROGRAM_COPY, ratesLabel } from '@/features/referrals/ui';
+import { Disclaimer, PROGRAM_COPY, ratesLabel, triggerOf, useRates } from '@/features/referrals/ui';
 import { colors, fonts, radius, spacing } from '@/theme';
 import { formatMoney, formatToken } from '@/utils/format';
 
@@ -33,6 +33,7 @@ export default function ProgramScreen() {
   const detail = useReferralStore((s) => (isProgram(program) ? s.details[program] : undefined));
   const loadProgram = useReferralStore((s) => s.loadProgram);
   const error = useReferralStore((s) => s.error);
+  const rates = useRates(); // before the early return below: hooks must run in the same order every render
 
   useEffect(() => {
     if (isProgram(program)) void loadProgram(program);
@@ -55,7 +56,7 @@ export default function ProgramScreen() {
     return (
       <Screen>
         <ScreenHeader eyebrow={`Program · ${rules.title}`} title={`${copy.name} referral`} back />
-        <EmptyState title={error ? 'Could not load' : 'Loading'} body={error ?? rules.trigger} />
+        <EmptyState title={error ? 'Could not load' : 'Loading'} body={error ?? triggerOf(rates, program)} />
       </Screen>
     );
   }
@@ -70,6 +71,7 @@ export default function ProgramScreen() {
 function Live({ detail, onShare, onTree }: { detail: ProgramDetail; onShare: () => void; onTree: () => void }) {
   const copy = PROGRAM_COPY[detail.program];
   const rules = REFERRAL_RULES[detail.program];
+  const rates = useRates();
   const gens = detail.teamByGeneration.length;
   const deeper = gens > 1 ? `Gen 2–${gens}` : '';
   const copyLink = async () => {
@@ -95,7 +97,7 @@ function Live({ detail, onShare, onTree }: { detail: ProgramDetail; onShare: () 
 
       <View style={styles.stats}>
         <StatTile label="Team size" value={String(detail.teamSize)} sub={`Gen 1–${gens}`} />
-        <StatTile label="Commission" value={ratesLabel(detail.program)} color={colors.redHot} sub={deeper ? `Gen 1 / ${deeper}` : 'Gen 1'} />
+        <StatTile label="Commission" value={ratesLabel(rates, detail.program)} color={colors.redHot} sub={deeper ? `Gen 1 / ${deeper}` : 'Gen 1'} />
       </View>
 
       <Card style={[styles.gap, styles.block]}>
@@ -103,7 +105,7 @@ function Live({ detail, onShare, onTree }: { detail: ProgramDetail; onShare: () 
           <Text variant="bodyStrong" color={colors.redHot}>
             ϟ{' '}
           </Text>
-          {rules.trigger}
+          {triggerOf(rates, detail.program)}
         </Text>
       </Card>
 

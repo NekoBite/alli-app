@@ -131,6 +131,21 @@ jobs:
       - name: Test
         run: npm test
 
+  tools:
+    # The migration tools read real members' money and tiers, so their parsers get a guard too.
+    # Pure Node, no install and no browser; the browser-driven test (test:e2e) stays local.
+    name: Migration tools (tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test
+        run: node --test tools/aura-migration/test/*.test.mjs
+
   bundle:
     # Catches what tsc cannot: a bad import path, a missing native module, or
     # anything Hermes refuses to compile. Metro bundles for both platforms on

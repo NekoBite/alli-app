@@ -18,13 +18,11 @@ export type RunDraft = {
   track: GeoPoint[];
   /** Credited steps so far — see `steps.ts`. */
   steps: number;
-  /** Steps the GPS check threw away, kept so the resumed screen still explains itself. */
+  /** Steps over the cadence limit, kept so the resumed screen still explains itself. */
   droppedSteps: number;
   /** Raw pedometer totals, so a resumed run can still be re-credited server-side. */
   rawSteps: number;
   stepSamples: StepSample[];
-  /** Distance at the last pedometer window, so step credit resumes from the right base. */
-  metresAtLastStep: number;
   elapsedSeconds: number;
 };
 

@@ -9,7 +9,7 @@ import { Card, IconTile, Logo, Row, Screen, ScreenHeader, Segmented, Text, toast
 import { PROGRAM_ORDER } from '@/features/referrals/rules';
 import { useReferralStore } from '@/features/referrals/store';
 import type { ReferralProgramId } from '@/features/referrals/types';
-import { Disclaimer, PROGRAM_COPY } from '@/features/referrals/ui';
+import { Disclaimer, PROGRAM_COPY, useYouGet } from '@/features/referrals/ui';
 import { colors, fonts, radius, spacing } from '@/theme';
 
 const LABEL: Record<ReferralProgramId, string> = { run: 'Run', garden: 'Garden', market: 'Market', card: 'Card' };
@@ -29,6 +29,7 @@ export default function ShareInviteScreen() {
   const summary = hub?.programs.find((p) => p.program === program);
   const url = summary ? `https://${summary.link}` : '';
   const copy = PROGRAM_COPY[program];
+  const youGet = useYouGet(program);
   const message = `Join me on ALLI — ${copy.friendGets.toLowerCase()}. ${url}`;
 
   const targets: { glyph: string; label: string; go: () => void }[] = [
@@ -80,7 +81,7 @@ export default function ShareInviteScreen() {
 
       <Card style={styles.lines}>
         <Row label="Your friend gets" value={copy.friendGets} />
-        <Row label="You get" value={copy.youGet} valueColor={colors.redHot} />
+        <Row label="You get" value={youGet} valueColor={colors.redHot} />
       </Card>
       <Text variant="caption" color={colors.inkFaint} style={styles.note}>
         Opening the link takes your friend to sign-in with this code filled in. Joining adds them to

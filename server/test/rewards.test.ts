@@ -28,8 +28,8 @@ describe('daily quest', () => {
 
   /**
    * A believable upload: the standard track, with a pedometer total every five
-   * fixes that works out to a ~1.4 m stride — inside both the window cap and
-   * the stride check, so nothing is flagged and the steps all count.
+   * fixes — 50 steps per 25 s, a 120/min walk, well inside the cadence limit, so
+   * all of it counts.
    */
   const run = (over: Partial<Parameters<typeof submitRun>[1]> = {}) => {
     const track = over.track ?? goodTrack(100);
@@ -125,33 +125,66 @@ describe('daily quest', () => {
     assert.equal((await getProfile(userId, DAY)).starsBalance, REWARD_RULES.starsPerQuest);
   });
 
-  it('ignores whatever the client claims and trusts only the raw track', async () => {
-    const userId = await createUser();
-    // A malicious client sends a short track but lies in every other field.
-    // Those fields are not part of SubmitRunInput at all, which is the point:
-    // there is nowhere to put the lie.
-    const result = await submitRun(userId, run({ track: goodTrack(4) }));
+  /** Pedometer totals with no track behind them: `perSample` steps every `gapMs`, from `startMs`. */
+  const walk = (samples: number, perSample = 50, gapMs = 25_000, startMs = 1_700_000_000_000) =>
+    Array.from({ length: samples }, (_, i) => ({ timestamp: startMs + (i + 1) * gapMs, steps: (i + 1) * perSample }));
 
-    assert.ok(result.reward.flags.includes('too-short'));
-    assert.equal(result.reward.eligibleSteps, 0);
-    assert.equal((await getProfile(userId, DAY)).stepsToday, 0);
+  it('credits only the raw samples, whatever else the client sends', async () => {
+    const userId = await createUser();
+    // The credited count, the distance and the stars are not part of SubmitRunInput at all, which is
+    // the point: there is nowhere to put the lie. All that can be sent is the raw samples.
+    const result = await submitRun(userId, run({ stepSamples: walk(20) }));
+
+    assert.equal(result.reward.steps, 1000);
+    assert.equal(result.reward.eligibleSteps, 1000);
+    assert.equal((await getProfile(userId, DAY)).stepsToday, 1000);
   });
 
-  it('rejects a run at vehicle speed', async () => {
+  it('counts steps with no GPS track at all', async () => {
     const userId = await createUser();
-    const result = await submitRun(userId, run({ track: drivingTrack(100) }));
+    const result = await submitRun(userId, run({ track: [], stepSamples: walk(20) }));
 
-    assert.ok(result.reward.flags.includes('pace-too-fast'));
-    assert.equal(result.reward.eligibleSteps, 0);
+    assert.deepEqual(result.reward.flags, []);
+    assert.equal(result.reward.distanceMetres, 0);
+    assert.equal(result.reward.steps, 1000);
+    assert.equal((await getProfile(userId, DAY)).stepsToday, 1000);
   });
 
-  it('records a rejected run but writes no ledger entry', async () => {
+  it('pays the quest to someone who walked in place, where GPS saw no movement', async () => {
+    // The client's rule: users who walk in a small area must not be discouraged. The track never
+    // moves, 6,000 steps are reported at a normal cadence, and the quest pays.
     const userId = await createUser();
-    await submitRun(userId, run({ track: drivingTrack(100) }));
+    const track = stationaryTrack(QUEST_FIXES);
+    const result = await submitRun(userId, run({ track, stepSamples: stepSamples(track, 50) }));
 
-    const runs = await pool.query('SELECT 1 FROM runs WHERE user_id = $1', [userId]);
+    assert.deepEqual(result.reward.flags, []);
+    assert.equal(result.reward.distanceMetres, 0);
+    assert.equal(result.reward.steps, REWARD_RULES.dailyStepGoal);
+    assert.equal(result.reward.questPaid, true);
+    assert.equal(result.reward.stars, REWARD_RULES.starsPerQuest);
+    assert.equal((await getProfile(userId, DAY)).starsBalance, REWARD_RULES.starsPerQuest);
+  });
+
+  it('does not let GPS veto the steps: a track that looks like a drive still counts', async () => {
+    // Documents a consequence of the client's rule, so nobody is surprised by it: GPS no longer
+    // judges a run, so a vehicle-speed track does not zero steps the pedometer reported.
+    const userId = await createUser();
+    const track = drivingTrack(100);
+    const result = await submitRun(userId, run({ track, stepSamples: stepSamples(track, 50) }));
+
+    assert.deepEqual(result.reward.flags, []);
+    assert.equal(result.reward.steps, 1000);
+  });
+
+  it('records a run that added nothing, with its reason, but writes no ledger entry', async () => {
+    const userId = await createUser();
+    const result = await submitRun(userId, run({ track: [], stepSamples: [] }));
+
+    assert.deepEqual(result.reward.flags, ['no-steps']);
+    const runs = await pool.query('SELECT flags FROM runs WHERE user_id = $1', [userId]);
     const ledger = await pool.query('SELECT 1 FROM star_ledger WHERE user_id = $1', [userId]);
-    assert.equal(runs.rowCount, 1, 'the run is kept so the user can see why it failed');
+    assert.equal(runs.rowCount, 1, 'the run is kept so the user can see why it added nothing');
+    assert.deepEqual(runs.rows[0].flags, ['no-steps']);
     assert.equal(ledger.rowCount, 0, 'but nothing moved');
   });
 
@@ -170,31 +203,39 @@ describe('daily quest', () => {
     assert.equal(profile.stepsToday, first.reward.eligibleSteps, 'and counted once');
   });
 
-  it('credits nothing for steps a phone reported while standing still', async () => {
+  it('cuts a total no person could have walked down to what the time allows', async () => {
+    // The one bound left once GPS is out of it: cadence. A client reporting 100,000 steps a minute
+    // after the run began is credited what a person could walk in that minute, not the claim.
+    const start = 1_700_000_000_000;
     const userId = await createUser();
-    const track = stationaryTrack(100);
-    // The shaken phone: thousands of steps, no ground covered.
-    const result = await submitRun(userId, run({ track, stepSamples: stepSamples(track, 500) }));
+    const result = await submitRun(userId, {
+      clientRunId: randomUUID(),
+      startedAt: start,
+      track: [],
+      stepSamples: [{ timestamp: start + 60_000, steps: 100_000 }],
+      day: DAY,
+    });
 
-    assert.equal(result.reward.steps, 0);
-    assert.equal(result.reward.eligibleSteps, 0);
-    assert.equal(result.reward.stars, 0);
+    assert.equal(result.reward.steps, 300, '300 steps a minute is the ceiling');
+    assert.equal(result.reward.questCompleted, false);
+    assert.equal((await getProfile(userId, DAY)).starsBalance, 0);
   });
 
-  it('caps a fabricated step count at what the distance could hold', async () => {
-    const track = goodTrack(100);
-    const honest = await submitRun(await createUser(), run({ track, stepSamples: stepSamples(track, 50) }));
-    const inflated = await submitRun(
-      await createUser(),
-      run({ track, stepSamples: stepSamples(track, 100_000) }),
-    );
+  it('bounds the first window by the run start too', async () => {
+    const start = 1_700_000_000_000;
+    const result = await submitRun(await createUser(), {
+      clientRunId: randomUUID(),
+      startedAt: start,
+      track: [],
+      stepSamples: [{ timestamp: start + 1000, steps: 500_000 }],
+      day: DAY,
+    });
+    assert.equal(result.reward.steps, 5, 'one second of walking');
+  });
 
-    assert.ok(
-      inflated.reward.steps < 20 * 100_000,
-      'the claim is cut down to what the track supports',
-    );
-    assert.ok(inflated.reward.steps > honest.reward.steps, 'without punishing an honest count');
-    assert.ok(inflated.reward.steps < REWARD_RULES.dailyStepGoal, 'and not enough to buy the quest');
+  it('does not punish an honest count', async () => {
+    const result = await submitRun(await createUser(), run({ track: [], stepSamples: walk(240) }));
+    assert.equal(result.reward.steps, 240 * 50, 'a 120/min walk is far inside the ceiling');
   });
 
   it('banks nothing when the device sent no step samples at all', async () => {
@@ -210,8 +251,8 @@ describe('daily quest', () => {
 
     // The track is a valid 1.37 km. Steps are what the quest counts, so a run
     // that reports none adds nothing — distance alone is not payable.
-    assert.deepEqual(result.reward.flags, []);
-    assert.ok(result.reward.eligibleMetres > 1000);
+    assert.deepEqual(result.reward.flags, ['no-steps']);
+    assert.ok(result.reward.distanceMetres > 1000);
     assert.equal(result.reward.steps, 0);
     assert.equal(result.reward.stars, 0);
   });

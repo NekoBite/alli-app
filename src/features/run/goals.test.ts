@@ -15,7 +15,7 @@ function run(daysAgo: number, steps: number, stars = 0): RunSummary {
     movingSeconds: 600,
     confirmed: true,
     reward: {
-      eligibleMetres: steps * 0.8,
+      distanceMetres: steps * 0.8,
       steps,
       eligibleSteps: steps,
       stepsToday: steps,

@@ -1,4 +1,17 @@
-import { formatRates, makeInviteCode, maskEmail, paidTo, REFERRAL_RULES, splitCommission } from './rules';
+import {
+  defaultRates,
+  describeRates,
+  formatRates,
+  makeInviteCode,
+  maskEmail,
+  MAX_GENERATIONS,
+  paidTo,
+  REFERRAL_RULES,
+  splitCommission,
+  triggerText,
+  validateRates,
+  youGetText,
+} from './rules';
 
 const USDT = 10n ** 18n;
 
@@ -74,5 +87,57 @@ describe('helpers', () => {
   it('masks e-mails', () => {
     expect(maskEmail('jessica@gmail.com')).toBe('je*****@gmail.com');
     expect(maskEmail('ab@x.io')).toBe('ab***@x.io');
+  });
+});
+
+describe('rates are data', () => {
+  it('describes any rate set in words, grouping generations that pay the same', () => {
+    expect(describeRates([2000, 1000, 1000, 1000])).toBe('20% to Gen 1, 10% each to Gen 2–4');
+    expect(describeRates([4000, 1000, 1000, 1000])).toBe('40% to Gen 1, 10% each to Gen 2–4');
+    expect(describeRates([2000, 500, 500])).toBe('20% to Gen 1, 5% each to Gen 2–3');
+    expect(describeRates([100, 50])).toBe('1% to Gen 1, 0.5% to Gen 2');
+    expect(describeRates([20])).toBe('0.2% to Gen 1');
+    expect(describeRates([1000, 500, 500, 1000])).toBe('10% to Gen 1, 5% each to Gen 2–3, 10% to Gen 4');
+    expect(describeRates([])).toBe('');
+  });
+
+  it('builds the screen copy from the rates, so it cannot drift from what is paid', () => {
+    // The same program, two different rate sets: only the numbers move.
+    expect(triggerText('run', [2000, 1000, 1000, 1000])).toBe(
+      'Paid when someone in your Run team upgrades their shoe to Silver. 20% to Gen 1, 10% each to Gen 2–4.',
+    );
+    expect(triggerText('run', [4000, 1000, 1000, 1000])).toContain('40% to Gen 1');
+    expect(youGetText('run', [2000, 1000, 1000, 1000])).toBe('20% of their Silver upgrade');
+    expect(youGetText('run', [4000, 1000, 1000, 1000])).toBe('40% of their Silver upgrade');
+    expect(youGetText('garden', [2000, 500, 500])).toBe('20% of their seed purchases');
+    expect(youGetText('market', [100, 50])).toBe('1% of every order they place');
+    // The card states its own proposal; the rates do not rewrite it.
+    expect(triggerText('card', [20])).toBe(REFERRAL_RULES.card.trigger);
+  });
+
+  it('every default is itself a valid rate set', () => {
+    for (const rates of Object.values(defaultRates())) expect(validateRates(rates)).toBeNull();
+  });
+
+  it('refuses rates that cannot be paid out of one purchase', () => {
+    expect(validateRates([2000, 1000, 1000, 1000])).toBeNull();
+    expect(validateRates([10_000])).toBeNull(); // exactly 100% is allowed
+    expect(validateRates([10_000, 1])).toMatch(/more than 100%/);
+    expect(validateRates([6000, 5000])).toMatch(/more than 100%/);
+    expect(validateRates([])).toMatch(/at least one/i);
+    expect(validateRates([-1])).toMatch(/whole number/);
+    expect(validateRates([20.5])).toMatch(/whole number/);
+    expect(validateRates([10_001])).toMatch(/whole number/);
+    expect(validateRates(Array(MAX_GENERATIONS + 1).fill(1))).toMatch(/at most/i);
+  });
+
+  it('splits the same purchase differently under a different rate set, with no code change', () => {
+    const upline = [
+      { id: 'g1', qualified: true },
+      { id: 'g2', qualified: true },
+    ];
+    expect(paidTo(splitCommission(100n * USDT, [4000, 1000], upline), 'g1')).toBe(40n * USDT);
+    expect(paidTo(splitCommission(100n * USDT, [2000, 1000], upline), 'g1')).toBe(20n * USDT);
+    expect(paidTo(splitCommission(100n * USDT, [2000, 1000], upline), 'g2')).toBe(10n * USDT);
   });
 });

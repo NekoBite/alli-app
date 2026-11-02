@@ -1,8 +1,10 @@
 import { Tabs } from 'expo-router';
+import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Gradient } from '@/components';
+import { useReferralStore } from '@/features/referrals/store';
 import { colors, fonts } from '@/theme';
 
 /**
@@ -15,6 +17,10 @@ function TabGlyph({ focused }: { focused: boolean }) {
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  // The commission rates in force, so every banner and screen quotes what the server pays.
+  useEffect(() => {
+    void useReferralStore.getState().loadRates();
+  }, []);
   return (
     <Tabs
       screenOptions={{

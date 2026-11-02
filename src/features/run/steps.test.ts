@@ -1,123 +1,128 @@
 import { creditStepSamples, creditStepWindow, creditSteps, STEP_RULES } from './steps';
-import type { GeoPoint, StepSample } from './types';
+import type { StepSample } from './types';
+
+const MAX = STEP_RULES.maxStepsPerMinute;
 
 describe('creditStepWindow', () => {
-  it('credits steps the distance supports', () => {
-    // 20 m at 0.3 m/step supports 66 steps, so 40 reported all count.
-    expect(creditStepWindow({ steps: 40, metres: 20 })).toEqual({ steps: 40, dropped: 0 });
+  it('credits a plausible cadence in full', () => {
+    // 120 steps a minute for a minute.
+    expect(creditStepWindow({ steps: 120, seconds: 60 })).toEqual({ steps: 120, dropped: 0 });
   });
 
-  it('drops every step when GPS shows no movement — the shaken phone', () => {
-    expect(creditStepWindow({ steps: 120, metres: 0 })).toEqual({ steps: 0, dropped: 120 });
+  it('does not look at GPS: standing in a corridor or walking round a room counts', () => {
+    // The window carries a duration and nothing about distance. There is no input that could make a
+    // walk worth less because GPS saw no movement.
+    expect(creditStepWindow({ steps: 40, seconds: 20 })).toEqual({ steps: 40, dropped: 0 });
   });
 
-  it('drops a window that moved less than the floor', () => {
-    const window = { steps: 30, metres: STEP_RULES.minWindowMetres - 0.01 };
-    expect(creditStepWindow(window)).toEqual({ steps: 0, dropped: 30 });
+  it('cuts a window down to what a person could walk in its duration', () => {
+    // 1,000 steps in a minute is not a person.
+    expect(creditStepWindow({ steps: 1000, seconds: 60 })).toEqual({ steps: MAX, dropped: 1000 - MAX });
   });
 
-  it('caps steps at what the distance could physically hold', () => {
-    // 3 m supports 10 steps at 0.3 m each; the other 90 are not real.
-    expect(creditStepWindow({ steps: 100, metres: 3 })).toEqual({ steps: 10, dropped: 90 });
+  it('drops only the excess, never the whole window', () => {
+    // A delayed sensor callback delivers a burst. The legitimate part still counts.
+    const credit = creditStepWindow({ steps: MAX + 40, seconds: 60 });
+    expect(credit.steps).toBe(MAX);
+    expect(credit.dropped).toBe(40);
   });
 
-  it('treats no steps as nothing to credit or drop', () => {
-    expect(creditStepWindow({ steps: 0, metres: 50 })).toEqual({ steps: 0, dropped: 0 });
+  it('treats a very short window as at least the minimum length', () => {
+    // Two callbacks a millisecond apart are one moment, not a window with no time in it.
+    const floor = Math.floor((STEP_RULES.minWindowSeconds * MAX) / 60);
+    expect(creditStepWindow({ steps: 3, seconds: 0 }).steps).toBe(3);
+    expect(creditStepWindow({ steps: 1000, seconds: 0 }).steps).toBe(floor);
+    expect(creditStepWindow({ steps: 1000, seconds: 0.001 }).steps).toBe(floor);
+    expect(creditStepWindow({ steps: 1000, seconds: -5 }).steps).toBe(floor);
+    expect(creditStepWindow({ steps: 1000, seconds: Number.NaN }).steps).toBe(floor);
+  });
+
+  it('puts no cap on a window with no known start', () => {
+    expect(creditStepWindow({ steps: 5000, seconds: Infinity })).toEqual({ steps: 5000, dropped: 0 });
+  });
+
+  it('floors fractions and ignores negatives and empty windows', () => {
+    expect(creditStepWindow({ steps: 12.9, seconds: 60 }).steps).toBe(12);
+    expect(creditStepWindow({ steps: -4, seconds: 60 })).toEqual({ steps: 0, dropped: 0 });
+    expect(creditStepWindow({ steps: 0, seconds: 60 })).toEqual({ steps: 0, dropped: 0 });
   });
 });
 
 describe('creditSteps', () => {
-  it('sums windows, keeping the dropped ones visible', () => {
+  it('sums the windows', () => {
     expect(
       creditSteps([
-        { steps: 40, metres: 20 },
-        { steps: 60, metres: 0 },
-        { steps: 100, metres: 3 },
+        { steps: 100, seconds: 60 },
+        { steps: 90, seconds: 60 },
+        { steps: 1000, seconds: 60 },
       ]),
-    ).toEqual({ steps: 50, dropped: 150 });
+    ).toEqual({ steps: 100 + 90 + MAX, dropped: 1000 - MAX });
   });
 
-  it('is zero for an empty run', () => {
+  it('has nothing to credit for no windows', () => {
     expect(creditSteps([])).toEqual({ steps: 0, dropped: 0 });
   });
 });
 
 describe('creditStepSamples', () => {
   const START = 1_700_000_000_000;
+  const at = (seconds: number, steps: number): StepSample => ({ timestamp: START + seconds * 1000, steps });
 
-  /** Fixes 5 s apart, ~13.9 m each — a 2.8 m/s jog. */
-  function movingTrack(points: number): GeoPoint[] {
-    return Array.from({ length: points }, (_, i) => ({
-      latitude: 13.7563 + i * 0.000125,
-      longitude: 100.5018,
-      timestamp: START + i * 5000,
-      accuracy: 6,
-    }));
-  }
-
-  /** Same fixes, same times, but the phone never leaves the spot. */
-  function stillTrack(points: number): GeoPoint[] {
-    return Array.from({ length: points }, (_, i) => ({
-      latitude: 13.7563,
-      longitude: 100.5018,
-      timestamp: START + i * 5000,
-      accuracy: 6,
-    }));
-  }
-
-  /** Running totals, `perSample` steps every 5 fixes. */
-  function samples(track: GeoPoint[], perSample: number): StepSample[] {
-    const out: StepSample[] = [];
-    let total = 0;
-    for (let i = 4; i < track.length; i += 5) {
-      total += perSample;
-      out.push({ timestamp: track[i]!.timestamp, steps: total });
-    }
-    return out;
-  }
-
-  it('credits a plausible cadence in full', () => {
-    const track = movingTrack(21);
-    // 4 windows of 50 steps over ~69 m each.
-    expect(creditStepSamples(track, samples(track, 50))).toEqual({ steps: 200, dropped: 0 });
-  });
-
-  it('credits nothing to a phone that never moved', () => {
-    const track = stillTrack(21);
-    expect(creditStepSamples(track, samples(track, 50)).steps).toBe(0);
-  });
-
-  it('cuts an inflated total down to what the ground supports', () => {
-    const track = movingTrack(21);
-    const credit = creditStepSamples(track, samples(track, 100_000));
-
-    expect(credit.steps).toBeGreaterThan(0);
-    expect(credit.steps).toBeLessThan(1000);
-    expect(credit.dropped).toBeGreaterThan(credit.steps);
+  it('credits a plausible walk in full, with no track involved', () => {
+    // 50 steps every 25 s: 120 a minute.
+    const samples = [at(25, 50), at(50, 100), at(75, 150), at(100, 200)];
+    expect(creditStepSamples(samples, START)).toEqual({ steps: 200, dropped: 0 });
   });
 
   it('treats the samples as running totals, not per-window counts', () => {
-    const track = movingTrack(21);
-    const flat: StepSample[] = [
-      { timestamp: START + 4 * 5000, steps: 50 },
-      { timestamp: START + 9 * 5000, steps: 50 },
-      { timestamp: START + 14 * 5000, steps: 50 },
-    ];
     // A total that stops climbing means no new steps were taken.
-    expect(creditStepSamples(track, flat)).toEqual({ steps: 50, dropped: 0 });
+    expect(creditStepSamples([at(25, 50), at(50, 50), at(75, 50)], START)).toEqual({ steps: 50, dropped: 0 });
   });
 
   it('ignores a total that goes backwards', () => {
-    const track = movingTrack(21);
-    const rewound: StepSample[] = [
-      { timestamp: START + 4 * 5000, steps: 60 },
-      { timestamp: START + 9 * 5000, steps: 10 },
-      { timestamp: START + 14 * 5000, steps: 80 },
-    ];
-    expect(creditStepSamples(track, rewound).steps).toBe(80);
+    expect(creditStepSamples([at(30, 60), at(60, 10), at(90, 80)], START).steps).toBe(80);
+  });
+
+  it('cuts an inflated total down to what the time allows', () => {
+    // 100,000 steps claimed a minute in.
+    const credit = creditStepSamples([at(60, 100_000)], START);
+    expect(credit.steps).toBe(MAX);
+    expect(credit.dropped).toBe(100_000 - MAX);
+  });
+
+  it('bounds the first window by the run start, so a lone huge sample buys nothing', () => {
+    expect(creditStepSamples([at(1, 500_000)], START).steps).toBe(Math.floor((1 * MAX) / 60));
+  });
+
+  it('leaves the first window uncapped when the start is unknown', () => {
+    expect(creditStepSamples([at(1, 5000)]).steps).toBe(5000);
+  });
+
+  it('orders samples by time before windowing them', () => {
+    expect(creditStepSamples([at(75, 150), at(25, 50), at(50, 100)], START)).toEqual({ steps: 150, dropped: 0 });
+  });
+
+  it('treats a sample stamped before the run began as a minimum-length window, not a negative one', () => {
+    const credit = creditStepSamples([at(-10, 4)], START);
+    expect(credit.steps).toBe(4);
+  });
+
+  it('is the same total however the run was recorded: live windows equal the whole re-credit', () => {
+    // The phone credits window by window as readings arrive; the server credits the whole run from
+    // the samples. Both must reach the same number or a user is shown one figure and paid another.
+    const samples = [at(10, 18), at(20, 40), at(25, 400), at(60, 460), at(120, 620)];
+    let previous = START;
+    let live = 0;
+    let before = 0;
+    for (const sample of samples) {
+      live += creditStepWindow({ steps: sample.steps - before, seconds: (sample.timestamp - previous) / 1000 }).steps;
+      before = sample.steps;
+      previous = sample.timestamp;
+    }
+    expect(live).toBe(creditStepSamples(samples, START).steps);
   });
 
   it('has nothing to credit without samples', () => {
-    expect(creditStepSamples(movingTrack(21), [])).toEqual({ steps: 0, dropped: 0 });
+    expect(creditStepSamples([], START)).toEqual({ steps: 0, dropped: 0 });
   });
 });

@@ -20,11 +20,13 @@ import type { Product, ProductCategory } from '@/features/market/types';
 import { ProductImage } from '@/features/market/ui/ProductImage';
 import { colors, radius, spacing } from '@/theme';
 import { formatToken } from '@/utils/format';
+import { useYouGet } from '@/features/referrals/ui';
 
 type Filter = 'all' | ProductCategory;
 
 /** 4.1 Marketplace — physical goods paid in ALLI or USDT. */
 export default function MarketScreen() {
+  const youGetMarket = useYouGet('market');
   const router = useRouter();
   const count = useMarketStore((state) => state.itemCount());
   const [query, setQuery] = useState('');
@@ -62,7 +64,7 @@ export default function MarketScreen() {
       />
 
       <View style={styles.stack}>
-        <InviteBanner title="Invite shoppers" subtitle="1% of every order they place" href="/referrals/market" />
+        <InviteBanner title="Invite shoppers" subtitle={youGetMarket} href="/referrals/market" />
 
         <Field
           value={query}

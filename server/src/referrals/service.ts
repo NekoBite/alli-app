@@ -4,6 +4,7 @@ import { pool, transaction, type Db } from '../db/pool.ts';
 import { env } from '../config/env.ts';
 import { membershipActive } from '../credits/service.ts';
 import { ApiError } from '../lib/errors.ts';
+import { ratesAt } from './rates.ts';
 import {
   PROGRAM_ORDER,
   REFERRAL_RULES,
@@ -166,17 +167,20 @@ export async function bookCommission(
   const rules = REFERRAL_RULES[input.program];
   if (!rules.live) return;
   const now = input.now ?? Date.now();
+  // The rates in force at the moment the purchase is fulfilled: the same moment qualification is
+  // judged. Each row records the rate it was booked at, so a later change never rewrites history.
+  const ratesBps = await ratesAt(db, input.program, now);
   const ids = await uplineOf(db, input.buyerId, input.program);
   if (ids.length === 0) return;
   const upline: UplineMember[] = [];
   for (const id of ids) upline.push({ id, qualified: await isQualified(db, id, input.program, now) });
 
-  const split = splitCommission(input.amount, rules.ratesBps, upline);
+  const split = splitCommission(input.amount, ratesBps, upline);
   const rows: { beneficiary: string | null; generation: number; amount: bigint; rolledFrom: string | null }[] =
     split.payouts.map((p) => ({ beneficiary: p.memberId, generation: p.generation, amount: p.amount, rolledFrom: p.rolledUpFrom ?? null }));
 
   // Treasury shares, per generation, so the ledger accounts for every basis point that left the buyer.
-  rules.ratesBps.forEach((bps, i) => {
+  ratesBps.forEach((bps, i) => {
     const generation = i + 1;
     if (rows.some((r) => r.generation === generation)) return;
     if (!upline[i]) return; // no sponsor at that depth: unassigned, not booked
@@ -186,10 +190,10 @@ export async function bookCommission(
 
   for (const r of rows) {
     await db.query(
-      `INSERT INTO commissions (program, beneficiary_id, buyer_id, generation, symbol, amount, rolled_up_from, intent_id, payable_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, to_timestamp($9/1000.0))
+      `INSERT INTO commissions (program, beneficiary_id, buyer_id, generation, symbol, amount, rolled_up_from, intent_id, payable_at, rate_bps)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, to_timestamp($9/1000.0), $10)
        ON CONFLICT (intent_id, generation) DO NOTHING`,
-      [input.program, r.beneficiary, input.buyerId, r.generation, input.symbol, r.amount.toString(), r.rolledFrom, input.intentId, input.payableAt ?? now],
+      [input.program, r.beneficiary, input.buyerId, r.generation, input.symbol, r.amount.toString(), r.rolledFrom, input.intentId, input.payableAt ?? now, ratesBps[r.generation - 1] ?? null],
     );
   }
 }
@@ -234,7 +238,7 @@ export async function hub(userId: string, now = Date.now()): Promise<ReferralHub
   for (const program of PROGRAM_ORDER) {
     const code = await codeFor(pool, userId, program);
     const { earned } = await earnings(pool, userId, program, now);
-    const team = await teamByGeneration(pool, userId, program, Math.max(1, REFERRAL_RULES[program].ratesBps.length));
+    const team = await teamByGeneration(pool, userId, program, Math.max(1, (await ratesAt(pool, program, now)).length));
     const status = !REFERRAL_RULES[program].live
       ? ('comingSoon' as const)
       : (await isQualified(pool, userId, program, now))
@@ -258,7 +262,7 @@ export async function programDetail(userId: string, program: ReferralProgramId, 
   const rules = REFERRAL_RULES[program];
   const code = await codeFor(pool, userId, program);
   const e = await earnings(pool, userId, program, now);
-  const gens = Math.max(1, rules.ratesBps.length);
+  const gens = Math.max(1, (await ratesAt(pool, program, now)).length);
   const team = await teamByGeneration(pool, userId, program, gens);
   const checks = await qualification(pool, userId, program, now);
   const qualified = rules.live && checks.every((c) => c.met || c.soft);
@@ -299,7 +303,7 @@ export async function programDetail(userId: string, program: ReferralProgramId, 
 
 /** The downline for the tree views (6.6 / 6.6b): masked handles, tiers, who rolls up. */
 export async function downline(userId: string, program: ReferralProgramId, now = Date.now()) {
-  const depth = Math.max(1, REFERRAL_RULES[program].ratesBps.length);
+  const depth = Math.max(1, (await ratesAt(pool, program, now)).length);
   const { rows } = await pool.query<{
     user_id: string;
     sponsor_id: string;

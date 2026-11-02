@@ -6,7 +6,7 @@ React Native (Expo SDK 57) app for Android and iOS, built to the ALLI App wirefr
 [`design/wireframes/`](design/wireframes/README.md). Four features, each with its own referral
 program:
 
-1. **ALLI RUN** — a daily quest of 6,000 GPS-verified steps pays **stars**, exchangeable for
+1. **ALLI RUN** — a daily quest of 6,000 steps pays **stars**, exchangeable for
    **ALLI** on BNB Smart Chain. The reward scales with the tier of NFT footwear held. Each
    recorded run spends a run credit; credits come from a monthly membership or are bought
    outright.
@@ -147,7 +147,7 @@ star, so a garden day can pay a fraction (migration 003).
 ### The weekly quest
 
 One quest a week, for the whole community, not per player: a goal the community reaches
-together (compost uses, thriving nights, sun meters filled, GPS-verified steps, pledges in the
+together (compost uses, thriving nights, sun meters filled, steps, pledges in the
 burning season) or a cap it stays under (synthetic fertiliser). Everyone's contributions are counted
 by the server from the actions it already handles, so there is nothing to submit; when the week
 closes, Monday 00:00 UTC, every player who did their part is paid the reward in stars, and some
@@ -194,14 +194,14 @@ legible — **they are not a balanced economy.** Before launch they belong on th
 be tuned without an app release. See [docs/architecture.md](docs/architecture.md) §4 for the
 emission model and the sinks that have to absorb it.
 
-**One daily quest, paid in stars.** 6,000 GPS-verified steps in a day — accumulated across however
+**One daily quest, paid in stars.** 6,000 steps in a day — accumulated across however
 many runs it takes — pays once. Distance is measured, shown in kilometres and used to validate (it
 is how the app knows the steps were real, and what the pace and stride checks run on), but it is
 the evidence for the steps, never the thing being paid.
 
 | | Placeholder |
 |---|---|
-| Daily quest | 6,000 GPS-verified steps |
+| Daily quest | 6,000 steps |
 | Quest reward | 1 star × the shoe multiplier, paid once a day |
 | Shoe tiers | Leather 1× (free at registration), Silver 3×, Gold 5× |
 | Star value | 1 star = 1,000 ALLI |
@@ -240,14 +240,15 @@ BSC RPC today. Only signing is stubbed.
 preview, never a credit.** The backend must re-run the same function on the raw track before ALLI
 moves. A value the phone can edit is a value the phone can mint.
 
-The client-side anti-cheat (`REWARD_RULES` + `summarizeTrack` + `creditStepSamples`) filters poor
-GPS, implausible hops, vehicle-speed runs, stride lengths that do not match the step count, and
-steps no GPS movement backs up. It raises the cost of faking a run; it does not prevent it. Real
-defence is server-side: device attestation (Play Integrity / App Attest), per-account rate limits,
-route plausibility, and manual review of outliers.
+Steps are credited as the pedometer reports them, bounded only by cadence (`steps.ts`); GPS plays no
+part in judging a run, so people who walk in a small area where GPS cannot follow are not penalised.
+That was a deliberate product decision, and it removes the sensor-side check on the pedometer:
+nothing here stops a shaken phone or a modified client. Real defence is device attestation (Play
+Integrity / App Attest), platform step data, per-account limits, and manual review of outliers; the
+once-a-day quest is what caps emission per account. See `docs/architecture.md` §3.
 
-The server already re-runs all of it. A run is uploaded as a raw track plus the pedometer's raw
-totals, and **no credited number is accepted from the phone** — distance, moving time, steps, the
+The server already re-runs all of it. A run is uploaded as the pedometer's raw totals (and a GPS track,
+if there is one), and **no credited number is accepted from the phone** — distance, moving time, steps, the
 day's running total, the shoe multiplier and the stars are all recomputed in
 `server/src/run/service.ts`.
 

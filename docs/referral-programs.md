@@ -32,11 +32,15 @@ another member does not move them.
 Rates for ALLI RUN come from AURA RUN. The rest are **proposals**. They are placeholders to
 tune, and the back office should hold them as configuration, not constants.
 
-ALLI RUN's Gen 1 rate was corrected from 40% to **20%** on 2026-11-01, against live commission
-records read from the AURA RUN admin panel (`reference/aura-run-referral-model.md` §"Rates,
-corrected"). The 40% figure came from a screenshot of the in-app blurb, which overstated it; the
-panel's own payout history — real, confirmed commissions, not marketing copy — is the better
-source and is what `ratesBps` in `src/features/referrals/rules.ts` now matches.
+ALLI RUN's Gen 1 rate was 40% until about 31 Oct 2026 and has been 20% since 1 Nov, per the AURA RUN
+admin panel's own commission ledger (`reference/aura-run-referral-model.md` §"Rates"). Who changed it, and
+why, is not known. Which rate ALLI launches with is the client's decision.
+
+**Rates are configuration, not code.** The `referral_rates` table (migration 007) holds a rate set per
+program with the date it takes effect; the set in force when a purchase is fulfilled is the one used,
+and each commission row records its `rate_bps`, so a later change never rewrites what was paid. The
+values below are the defaults in `src/features/referrals/rules.ts`, used until a set exists. The app
+reads the live rates from `GET /v1/referrals/rates` and builds its on-screen text from them.
 
 | Program | Trigger (commissionable event) | Generations & rates | Paid in | Qualified to earn |
 |---|---|---|---|---|

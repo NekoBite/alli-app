@@ -31,25 +31,25 @@ mode is active — worth checking first when something 503s.
 
 This is the whole point of the service, so it is worth being explicit.
 
-**What the client sends:** the raw GPS track, the pedometer's raw running totals,
-a client-generated run id, and the runner's local calendar day.
+**What the client sends:** the pedometer's raw running totals, the raw GPS track
+(optional: steps are credited without GPS), a client-generated run id, and the
+runner's local calendar day.
 
 **What the client does not send:** distance, moving time, rejected-fix count, the
 credited step count, the day's running total, the shoe multiplier, or the stars.
 Not because the app is polite about it — because there is nowhere in the request
-body to put them. The server recomputes all of it from `track` and `stepSamples`,
-plus what it already knows about the account:
+body to put them. The server recomputes all of it from `stepSamples` (and `track`
+for the distance shown), plus what it already knows about the account:
 
 ```
 POST /v1/run/runs
-  → summarizeTrack(track)                 drops bad fixes, sums real distance
-  → creditStepSamples(track, samples)     pairs each pedometer window with the
-                                          ground covered; a phone that did not
-                                          move credits no steps
+  → summarizeTrack(track)                 drops bad fixes, sums distance: shown,
+                                          never paid, never used to judge the run
+  → creditStepSamples(samples, startedAt) credits each pedometer window, capped
+                                          at what a person could walk in it
   → the day's steps so far, under the row lock
   → the account's shoe tier, from users.shoe_tier
-  → calculateReward(stats, ctx)           pace bounds, stride check, and the star
-                                          if the day crossed 6,000 steps
+  → calculateReward(stats, ctx)           the star, if the day crossed 6,000 steps
   → ledger entry, inside the same transaction as the run row
 ```
 
@@ -88,7 +88,7 @@ POST /v1/payments/intents  { kind, … }     → a signed PaymentRouter quote (r
 GET  /v1/payments/intents/:id              → { status, txHash }
 POST /v1/garden/plots      { seedId, intentId? }
 GET  /v1/market/products · /v1/market/orders[/:id] · POST /v1/market/orders
-GET  /v1/referrals · /v1/referrals/:program · /v1/referrals/:program/downline
+GET  /v1/referrals · /v1/referrals/:program · /v1/referrals/:program/downline · /v1/referrals/rates
 POST /v1/referrals/attribute { code }
 GET  /v1/wallet/account · /v1/wallet/transactions · /v1/wallet/prices
 ```
@@ -102,6 +102,11 @@ or quote key configured every purchase answers 503 `payments_unavailable`, and p
 
 **A run spends a credit.** `submitRun` refuses (402 `no_run_credits`) when the balance is zero and
 writes −1 against the run inside its transaction. `SIGNUP_RUN_CREDITS` grants a starting balance.
+
+**Commission rates are data.** `referral_rates` (migration 007) holds a rate set per program with an
+effective date; `ratesAt` returns the set in force, else the code defaults. `setRates` writes a whole set:
+refused if it adds up to more than 100%, and never overwrites an existing moment. Each commission stores
+the `rate_bps` it was booked at. Until the admin dashboard calls `setRates`, an operator does.
 
 ## Correctness decisions worth knowing
 

@@ -1,30 +1,13 @@
-import { calculateReward, questProgress, REWARD_RULES, starsToAlli, stepsToGo } from './rewards';
+import { calculateReward, explainFlag, questProgress, REWARD_RULES, starsToAlli, stepsToGo } from './rewards';
 import { SHOES } from './shoes';
-import type { GeoPoint } from './types';
-
-/** Minimal track — only its length matters to the GPS-quality check. */
-function track(points: number): GeoPoint[] {
-  return Array.from({ length: points }, (_, i) => ({
-    latitude: 13.7563 + i * 0.0001,
-    longitude: 100.5018,
-    timestamp: 1_700_000_000_000 + i * 1000,
-    accuracy: 8,
-  }));
-}
 
 /**
- * A plausible outing: 2.5 m/s over a 0.8 m stride, which is what the pace and
- * stride checks are looking for. Steps are what the quest counts, so they are
- * what each case varies.
+ * A run is its credited steps and the distance GPS happened to measure. Steps are what the quest
+ * counts, so they are what each case varies; distance is carried through for display and, as one
+ * test below insists, can never change the outcome.
  */
-function run(steps: number, over = { metresPerStep: 0.8, speedMps: 2.5 }) {
-  const distanceMetres = steps * over.metresPerStep;
-  return {
-    distanceMetres,
-    movingSeconds: distanceMetres / over.speedMps,
-    track: track(Math.max(2, Math.round(steps / 50))),
-    steps,
-  };
+function run(steps: number, distanceMetres = steps * 0.8) {
+  return { distanceMetres, steps };
 }
 
 /** A fresh day: nothing banked, nothing paid, the free shoe tier. */
@@ -78,58 +61,38 @@ describe('calculateReward — the daily quest', () => {
   it('treats an unknown tier as the free one rather than throwing', () => {
     expect(calculateReward(run(GOAL), freshDay).shoeMultiplier).toBe(1);
   });
+});
 
-  it('adds nothing to the day when the run is flagged', () => {
-    const reward = calculateReward(run(GOAL, { metresPerStep: 0.8, speedMps: 16 }), {
-      stepsToday: 1000,
+describe('calculateReward — GPS plays no part', () => {
+  it('pays the same for the same steps at any distance, including none', () => {
+    // Walking round a room, on a treadmill, or somewhere GPS cannot follow: the distance is
+    // nothing, and so is its effect. This is the property the client asked for.
+    const outcomes = [0, 1, 50, 5_000, 80_000].map((distance) => {
+      const reward = calculateReward(run(GOAL, distance), freshDay);
+      return [reward.flags, reward.eligibleSteps, reward.questPaid, reward.stars];
     });
-
-    expect(reward.flags).toContain('pace-too-fast');
-    expect(reward.eligibleSteps).toBe(0);
-    expect(reward.stepsToday).toBe(1000);
-    expect(reward.stars).toBe(0);
+    for (const outcome of outcomes) expect(outcome).toEqual([[], GOAL, true, REWARD_RULES.starsPerQuest]);
   });
 
-  it('adds nothing for distance with no steps behind it', () => {
+  it('carries the measured distance through for display, and never negative', () => {
+    expect(calculateReward(run(1000, 2345), freshDay).distanceMetres).toBe(2345);
+    expect(calculateReward(run(1000, -5), freshDay).distanceMetres).toBe(0);
+  });
+
+  it('adds nothing for distance with no steps behind it, and says why', () => {
     // A device with no pedometer, or GPS moving with nobody walking.
-    const reward = calculateReward(
-      { distanceMetres: 5000, movingSeconds: 2000, track: track(100) },
-      freshDay,
-    );
+    const reward = calculateReward({ distanceMetres: 5000, steps: undefined }, freshDay);
 
-    expect(reward.flags).toEqual([]);
-    expect(reward.eligibleMetres).toBe(5000);
+    expect(reward.flags).toEqual(['no-steps']);
+    expect(reward.distanceMetres).toBe(5000);
     expect(reward.eligibleSteps).toBe(0);
     expect(reward.stars).toBe(0);
+    expect(explainFlag('no-steps')).toMatch(/no steps/i);
   });
 
-  it('rejects a run faster than a human can move', () => {
-    const reward = calculateReward(run(5000, { metresPerStep: 0.8, speedMps: 16 }), freshDay);
-
-    expect(reward.flags).toContain('pace-too-fast');
-    expect(reward.eligibleSteps).toBe(0);
-  });
-
-  it('rejects a run below the minimum distance', () => {
-    const reward = calculateReward(run(200, { metresPerStep: 0.6, speedMps: 1.5 }), freshDay);
-
-    expect(reward.flags).toContain('too-short');
-    expect(reward.eligibleSteps).toBe(0);
-  });
-
-  it('flags a track where most fixes were discarded', () => {
-    const reward = calculateReward(run(4000), { ...freshDay, rejectedPoints: 400 });
-
-    expect(reward.flags).toContain('poor-gps');
-    expect(reward.eligibleSteps).toBe(0);
-  });
-
-  it('flags an impossible stride length', () => {
-    // 5 km on 500 steps = 10 m per step.
-    const reward = calculateReward(run(500, { metresPerStep: 10, speedMps: 3 }), freshDay);
-
-    expect(reward.flags).toContain('step-mismatch');
-    expect(reward.eligibleSteps).toBe(0);
+  it('floors fractional steps and ignores negative ones', () => {
+    expect(calculateReward(run(10.9), freshDay).eligibleSteps).toBe(10);
+    expect(calculateReward(run(-3), freshDay).eligibleSteps).toBe(0);
   });
 });
 

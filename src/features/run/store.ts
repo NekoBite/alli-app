@@ -53,11 +53,8 @@ type RunState = {
 
   refresh: () => Promise<void>;
   /** Local preview of what a finished run adds to today's quest. */
-  previewReward: (
-    session: Pick<RunSession, 'distanceMetres' | 'movingSeconds' | 'track' | 'steps'>,
-    rejectedPoints: number,
-  ) => RewardBreakdown;
-  submitRun: (session: RunSession, rejectedPoints: number) => Promise<RunSummary>;
+  previewReward: (session: Pick<RunSession, 'distanceMetres' | 'steps'>) => RewardBreakdown;
+  submitRun: (session: RunSession) => Promise<RunSummary>;
   /** Burns stars and sends the matching ALLI to the user's wallet. */
   exchangeStars: (stars: number, toAddress: string) => Promise<{ txHash: string; alli: number }>;
   /** Buys extra run credits, paid in ALLI or USDT. */
@@ -101,20 +98,19 @@ export const useRunStore = create<RunState>((set, get) => ({
     }
   },
 
-  previewReward(session, rejectedPoints) {
+  previewReward(session) {
     const { profile } = get();
     return calculateReward(session, {
       stepsToday: profile.stepsToday,
       starsEarnedToday: profile.starsEarnedToday,
       shoeTier: profile.shoeTier,
-      rejectedPoints,
     });
   },
 
-  async submitRun(session, rejectedPoints) {
+  async submitRun(session) {
     set({ error: undefined });
-    // The server re-runs validation on the raw track; its numbers win.
-    const summary = await runApi.submitRun(session, rejectedPoints);
+    // The server re-credits the steps from the raw samples; its numbers win.
+    const summary = await runApi.submitRun(session);
     set((state) => ({
       history: [summary, ...state.history],
       profile: {
