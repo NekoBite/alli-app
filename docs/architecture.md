@@ -347,3 +347,24 @@ screens read the code's numbers. These are open product decisions, not bugs:
 | Stars back | 10% back in stars on ALLI orders | 10% of the ALLI subtotal, valued at the exchange rate (so 2,500 ALLI → 0.25 ★) | `src/features/market/rules.ts` |
 
 Change the rule, not the screen: every figure above is read from the file in the last column.
+
+## Back office (`/v1/admin/*`)
+
+An admin is an ordinary account (email-code sign-in) with `users.admin_role`. The role is read from the
+database on every request, so a demotion bites immediately. Permissions live in
+`server/src/admin/permissions.ts`; anything not listed is refused.
+
+| Role | Can |
+|---|---|
+| `readonly` | view users, balances, rate history, audit log |
+| `admin` (secondary) | view; rename a user; send a user a sign-in code (ALLI has no passwords, so this is the "password-change link") |
+| `super` | everything: change commission rates and the Gold unlock rule, create accounts, grant/remove roles, adjust stars and run rounds |
+
+- **Rate changes are immediate.** The server stamps `effective_from = now`; the API accepts no date, so
+  nothing can be back-dated or scheduled. Booked commissions keep their recorded rate. A change needs a
+  reason and may carry `expectedCurrent` to refuse a stale edit.
+- **Gold unlock** (default 5 direct Silver referrals, `app_settings.gold_unlock_silver_directs`) is
+  enforced when a Gold purchase is quoted and changed by a super admin, immediately.
+- Every write goes to `admin_audit` (actor, action, target, before/after) in the same transaction as the change.
+- The last super admin cannot be demoted. First one: `npm run admin:bootstrap --workspace server -- <email>`.
+- Not built yet: step-count and token adjustments (no ledger exists for them).

@@ -2,6 +2,7 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 
+import { adminRoutes } from './admin/routes.ts';
 import { authRoutes } from './auth/routes.ts';
 import { relayerStatus } from './chain/relayer.ts';
 import { paymentsConfig } from './chain/signer.ts';
@@ -89,6 +90,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(marketRoutes);
   await app.register(referralRoutes);
   await app.register(walletRoutes);
+  await app.register(adminRoutes);
 
   return app;
 }

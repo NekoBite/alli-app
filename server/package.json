@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "node --test --test-concurrency=1 --import tsx test/*.test.ts",
-    "migrate": "tsx src/db/migrate.ts"
+    "migrate": "tsx src/db/migrate.ts",
+    "admin:bootstrap": "tsx src/admin/bootstrap.ts"
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.2.1",

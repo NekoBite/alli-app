@@ -53,13 +53,14 @@ export type SetRatesInput = {
  * program at that exact moment: sets are never overwritten, so the history of what was in force
  * stays true.
  */
-export async function setRates(input: SetRatesInput): Promise<void> {
+export async function setRates(input: SetRatesInput, within?: Db): Promise<void> {
   const problem = validateRates(input.ratesBps);
   if (problem) throw ApiError.badRequest('invalid_rates', problem);
   if (!PROGRAM_ORDER.includes(input.program)) throw ApiError.badRequest('unknown_program', 'Unknown program.');
   if (!Number.isFinite(input.effectiveFrom)) throw ApiError.badRequest('invalid_date', 'Give the date the rates take effect.');
 
-  await transaction(async (db) => {
+  // Given a transaction, join it: the admin endpoint writes the audit row in the same commit.
+  await (within ? (fn: (db: Db) => Promise<void>) => fn(within) : transaction)(async (db) => {
     // Serialise writers per program so two operators cannot interleave halves of two sets.
     await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`referral_rates:${input.program}`]);
     const { rows } = await db.query(

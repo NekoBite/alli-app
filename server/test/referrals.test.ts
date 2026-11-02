@@ -87,7 +87,9 @@ describe('referral programs', () => {
     const { rows: tier } = await pool.query('SELECT shoe_tier FROM users WHERE id = $1', [buyer]);
     assert.equal(tier[0].shoe_tier, 'silver');
 
-    // Silver → Gold is not a first Silver upgrade: no commission.
+    // Silver → Gold is not a first Silver upgrade: no commission. (Gold's own unlock rule is tested
+    // in admin.test.ts; here it is switched off so this test stays about commissions.)
+    await pool.query(`INSERT INTO app_settings (key, value) VALUES ('gold_unlock_silver_directs', '0')`);
     const gold = await createIntent(buyer, { kind: 'shoe', tier: 'gold', currency: 'USDT' });
     await confirmPayment({ id: gold.id, payer: gold.payer, token: gold.token, amount: BigInt(gold.amount), txHash: '0x2' });
     assert.equal((await commissionsOf(gold.id)).length, 0);
