@@ -126,6 +126,39 @@ describe('crawler against the mock admin', () => {
     }
   });
 
+  it('the commission verifier runs on the crawler’s own output, and its shape matches', async () => {
+    // The two tools meet here: whatever the crawler writes, the verifier must be able to read.
+    const verifier = fileURLToPath(new URL('../verify-commissions.mjs', import.meta.url));
+    const r = await new Promise((resolve) => {
+      const child = spawn(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', verifier, '--dir', out]);
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (d) => (stdout += d));
+      child.stderr.on('data', (d) => (stderr += d));
+      child.on('close', (status) => resolve({ status, stdout, stderr }));
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /COMMISSION DISTRIBUTION/);
+    assert.doesNotMatch(r.stdout, /@example\.com/, 'the console summary must carry no emails');
+
+    const report = readJson(out, 'private/verify-report.json');
+    assert.equal(report.events.ledgerOnly, 0, 'every upgrade on a profile should pair with its commissions');
+    assert.ok(report.events.withUpgradeRecord > 10);
+    assert.equal(report.structure.beneficiaryNotInUpline, 0);
+    assert.equal(report.structure.labelEqualsDepth, mock.data.commissions.length);
+    assert.equal(report.amounts.rowsOff, 0);
+    // The mock pays every ancestor whatever their tier, so no upgrade separates the rules.
+    assert.equal(report.verdict.status, 'undetermined');
+    assert.ok(report.qualification.byDepth[1].tierUnqualifiedPaid > 0, 'Leather sponsors are paid in the mock');
+
+    for (const name of ['shareable/verify-report.json', 'shareable/verify-events.csv']) {
+      const text = read(out, name);
+      assert.doesNotMatch(text, /@example\.com/, `${name} leaks an email`);
+      assert.doesNotMatch(text, /0x[a-f0-9]{40}/, `${name} leaks a wallet`);
+    }
+    assert.match(read(out, 'private/verify-events.csv'), /user\d+@example\.com/);
+  });
+
   it('--only consolidate rebuilds from disk with no browser', () => {
     const r = spawnSync(process.execPath, [crawler, '--out', out, '--only', 'consolidate'], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
