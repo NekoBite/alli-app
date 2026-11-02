@@ -52,6 +52,17 @@ describe('commerce routes', () => {
     assert.equal(prices.json().USDT, 1);
   });
 
+  it('serves the commission rates in force without a session, and follows a change', async () => {
+    const before = await app.inject({ url: '/v1/referrals/rates' });
+    assert.equal(before.statusCode, 200);
+    assert.deepEqual(before.json().run, [2000, 1000, 1000, 1000]);
+    assert.deepEqual(Object.keys(before.json()).sort(), ['card', 'garden', 'market', 'run']);
+
+    const { setRates } = await import('../src/referrals/rates.ts');
+    await setRates({ program: 'run', ratesBps: [4000, 1000, 1000, 1000], effectiveFrom: Date.now() - 1000 });
+    assert.deepEqual((await app.inject({ url: '/v1/referrals/rates' })).json().run, [4000, 1000, 1000, 1000]);
+  });
+
   it('answers 503 for purchases until the payment router is configured', async () => {
     const res = await app.inject({
       method: 'POST',

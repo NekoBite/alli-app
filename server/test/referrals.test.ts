@@ -11,6 +11,7 @@ process.env.ALLI_TOKEN_ADDRESS = '0x00000000000000000000000000000000000a1111';
 
 const { pool } = await import('../src/db/pool.ts');
 const { attribute, codeFor, downline, hub, programDetail } = await import('../src/referrals/service.ts');
+const { allRates, rateHistory, ratesAt, setRates } = await import('../src/referrals/rates.ts');
 const { confirmPayment, createIntent } = await import('../src/payments/service.ts');
 const { createOrder } = await import('../src/market/service.ts');
 const { createUser, setupDb } = await import('./helpers.ts');
@@ -141,5 +142,115 @@ describe('referral programs', () => {
     assert.equal(tree.members[1]!.sponsorId, a);
     assert.equal(tree.members[1]!.qualified, false);
     assert.match(detail.code, /^RUN-[2-9A-HJKMNP-Z]{6}$/);
+  });
+});
+
+describe('referral rates are data', () => {
+  beforeEach(setupDb);
+
+  const DAY = 86_400_000;
+  const RUN_DEFAULT = [2000, 1000, 1000, 1000];
+
+  /** A buyer under a Silver, active sponsor, then the buyer's first Silver upgrade. Returns the intent id. */
+  async function silverUpgrade(sponsor: string, email: string, tx: string) {
+    const buyer = await person(email);
+    await join(buyer, sponsor);
+    const intent = await createIntent(buyer, { kind: 'shoe', tier: 'silver', currency: 'USDT' });
+    await confirmPayment({ id: intent.id, payer: intent.payer, token: intent.token, amount: BigInt(intent.amount), txHash: tx });
+    return intent.id;
+  }
+
+  it('uses the code defaults until a set exists, and serves them', async () => {
+    assert.deepEqual([...(await ratesAt(pool, 'run'))], RUN_DEFAULT);
+    const all = await allRates();
+    assert.deepEqual([...all.garden], [2000, 500, 500]);
+    assert.deepEqual([...all.market], [100, 50]);
+  });
+
+  it('a set takes over from its effective date, and a future set is not yet in force', async () => {
+    const now = Date.now();
+    await setRates({ program: 'run', ratesBps: [4000, 1000, 1000, 1000], effectiveFrom: now - DAY, setBy: 'ops', note: 'back to 40%' });
+    await setRates({ program: 'run', ratesBps: [3000, 1000], effectiveFrom: now + 7 * DAY });
+
+    assert.deepEqual([...(await ratesAt(pool, 'run', now - 2 * DAY))], RUN_DEFAULT); // before any set
+    assert.deepEqual([...(await ratesAt(pool, 'run', now))], [4000, 1000, 1000, 1000]);
+    assert.deepEqual([...(await ratesAt(pool, 'run', now + 8 * DAY))], [3000, 1000]);
+    // Another program is untouched.
+    assert.deepEqual([...(await ratesAt(pool, 'garden', now))], [2000, 500, 500]);
+  });
+
+  it('books a purchase at the rate in force, records it, and never rewrites what was booked', async () => {
+    const sponsor = await person('sponsor@x.io', 'silver', true);
+
+    const before = await silverUpgrade(sponsor, 'first@x.io', '0xa1');
+    const old = await commissionsOf(before);
+    assert.equal(BigInt(old[0]!.amount), 20n * USDT); // 20% of 100 USDT, the default
+    const { rows: oldRate } = await pool.query('SELECT rate_bps FROM commissions WHERE intent_id = $1', [before]);
+    assert.equal(oldRate[0].rate_bps, 2000);
+
+    // The client decides on 40%. The same kind of purchase now pays 40, and the earlier row stands.
+    await setRates({ program: 'run', ratesBps: [4000, 1000, 1000, 1000], effectiveFrom: Date.now() - 1000, setBy: 'client' });
+    const after = await silverUpgrade(sponsor, 'second@x.io', '0xa2');
+    const fresh = await commissionsOf(after);
+    assert.equal(BigInt(fresh[0]!.amount), 40n * USDT);
+    const { rows: newRate } = await pool.query('SELECT rate_bps FROM commissions WHERE intent_id = $1', [after]);
+    assert.equal(newRate[0].rate_bps, 4000);
+
+    assert.equal(BigInt((await commissionsOf(before))[0]!.amount), 20n * USDT, 'history must not be rewritten');
+  });
+
+  it('records the rate on treasury and roll-up rows too', async () => {
+    // Gen 1 is a Leather member: their share goes to the treasury, still at the rate in force.
+    const sponsor = await person('leather@x.io', 'leather', true);
+    const id = await silverUpgrade(sponsor, 'b@x.io', '0xa3');
+    const { rows } = await pool.query('SELECT generation, beneficiary_id, rate_bps, amount::text FROM commissions WHERE intent_id = $1', [id]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].beneficiary_id, null);
+    assert.equal(rows[0].rate_bps, 2000);
+    assert.equal(BigInt(rows[0].amount), 20n * USDT);
+  });
+
+  it('pays only as many generations as the rate set has', async () => {
+    await setRates({ program: 'run', ratesBps: [2000, 1000], effectiveFrom: Date.now() - 1000 });
+    const g3 = await person('g3@x.io', 'silver', true);
+    const g2 = await person('g2@x.io', 'silver', true);
+    const g1 = await person('g1@x.io', 'silver', true);
+    await join(g2, g3);
+    await join(g1, g2);
+    const id = await silverUpgrade(g1, 'buyer@x.io', '0xa4');
+    const rows = await commissionsOf(id);
+    assert.deepEqual(rows.map((r) => r.generation), [1, 2]); // Gen 3 no longer earns
+  });
+
+  it('refuses a set that could pay out more than a purchase, a duplicate moment, and a bad program', async () => {
+    const at = Date.now() + DAY;
+    await assert.rejects(setRates({ program: 'run', ratesBps: [6000, 5000], effectiveFrom: at }), /more than 100%/);
+    await assert.rejects(setRates({ program: 'run', ratesBps: [], effectiveFrom: at }), /at least one/i);
+    await assert.rejects(setRates({ program: 'run', ratesBps: [20.5], effectiveFrom: at }), /whole number/);
+    // @ts-expect-error a program the schema does not know
+    await assert.rejects(setRates({ program: 'nope', ratesBps: [100], effectiveFrom: at }), /Unknown program/);
+
+    await setRates({ program: 'run', ratesBps: [3000], effectiveFrom: at });
+    await assert.rejects(setRates({ program: 'run', ratesBps: [3500], effectiveFrom: at }), /already start at that moment/);
+    // Nothing from the refused attempts leaked in: exactly one set, with its one generation.
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM referral_rates WHERE program = $1', ['run']);
+    assert.equal(rows[0].n, 1);
+  });
+
+  it('keeps a history of who set what, and when', async () => {
+    const t = Date.now();
+    await setRates({ program: 'run', ratesBps: [4000, 1000], effectiveFrom: t - 2 * DAY, setBy: 'old-vendor', note: 'launch' });
+    await setRates({ program: 'run', ratesBps: [2000, 1000], effectiveFrom: t - DAY, setBy: 'ops', note: 'cut Gen 1' });
+    const history = await rateHistory('run');
+    assert.deepEqual(history.map((h) => [h.ratesBps, h.setBy, h.note]), [
+      [[2000, 1000], 'ops', 'cut Gen 1'],
+      [[4000, 1000], 'old-vendor', 'launch'],
+    ]);
+  });
+
+  it('shows the team to the depth the rates pay', async () => {
+    await setRates({ program: 'run', ratesBps: [2000, 1000], effectiveFrom: Date.now() - 1000 });
+    const me = await person('me@x.io', 'silver', true);
+    assert.deepEqual((await programDetail(me, 'run')).teamByGeneration, [0, 0]);
   });
 });

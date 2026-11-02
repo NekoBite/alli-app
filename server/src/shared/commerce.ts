@@ -21,10 +21,14 @@ export type { CartLine, PaymentMethod, ShippingAddress } from '../../../src/feat
 export {
   REFERRAL_RULES,
   PROGRAM_ORDER,
+  MAX_GENERATIONS,
+  defaultRates,
+  validateRates,
   splitCommission,
   inviteLink,
   makeInviteCode,
   maskEmail,
+  type ReferralRates,
   type UplineMember,
 } from '../../../src/features/referrals/rules.ts';
 export type {

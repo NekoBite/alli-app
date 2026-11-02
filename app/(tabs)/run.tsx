@@ -26,9 +26,11 @@ import { colors, gradient, radius, spacing } from '@/theme';
 import { formatDistance, formatDuration, formatPoints, formatStars, formatToken } from '@/utils/format';
 import { relativeTime } from '@/utils/time';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useYouGet } from '@/features/referrals/ui';
 
 /** 2.2 ALLI RUN — the run hub: quest, run balance, stars, shoes and the week. */
 export default function RunScreen() {
+  const youGetRun = useYouGet('run');
   const router = useRouter();
   const { history, profile, entitlement, entitlementError, refresh, loading, canStart } =
     useRunStore();
@@ -57,7 +59,7 @@ export default function RunScreen() {
       />
 
       <View style={styles.stack}>
-        <InviteBanner title="Invite runners" subtitle="20% of their Silver upgrade" href="/referrals/run" />
+        <InviteBanner title="Invite runners" subtitle={youGetRun} href="/referrals/run" />
 
         <Card tone="hero" style={styles.gap}>
           <View style={styles.rowBetween}>

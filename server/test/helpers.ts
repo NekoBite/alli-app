@@ -17,7 +17,7 @@ export async function setupDb(): Promise<void> {
     `TRUNCATE users, auth_codes, sessions, identities, runs, star_ledger, redemptions,
              plots, gardens, quest_contributions, quest_weeks, quest_payouts,
              credit_ledger, memberships, payment_intents, orders, referral_codes,
-             sponsorships, commissions CASCADE`,
+             sponsorships, commissions, referral_rates CASCADE`,
   );
 }
 
