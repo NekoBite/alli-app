@@ -10,6 +10,7 @@ a credential. The output holds personal data: it stays on your machine and out o
 | `crawl-admin.mjs` | Reads the dashboard, the Members list, the whole Commissions ledger and every member's profile. **Read-only.** |
 | `redact-har.mjs` | Strips a browser network recording (HAR) so it can be shared. |
 | `console-export.js`, `export-members.mjs` | The earlier Members-list-only exporters. The crawler replaces them. |
+| `verify-commissions.mjs` | Replays the old commission ledger through ALLI's rules and says which one the old system used. |
 | `import-members.mjs` | Dry-run importer: turns `members.csv` into reviewable JSON and seed SQL. |
 
 ## Running the crawler
@@ -44,6 +45,41 @@ out it says so and stops; log in again and re-run the same command.
 
 Useful flags: `--delay 1500` to go slower, `--limit 50` to try a slice, `--force` to re-read profiles
 already on disk, `--only consolidate` to rebuild the outputs from disk without a browser.
+
+## Checking ALLI's commissions against the old system
+
+After a full crawl:
+
+```bash
+npm run verify
+```
+
+It replays every historical upgrade in the old ledger through ALLI's own `splitCommission`, and through
+the alternatives a 4-level plan could use, then reports which rule reproduces what the old system paid:
+
+| Rule | What happens to an unqualified ancestor's share |
+|---|---|
+| `rollup` (ALLI's) | passes up to the nearest qualified member; an unqualified Gen 1's goes to the treasury |
+| `rollup-all` | passes up for every generation, Gen 1 included |
+| `skip` | is simply not paid |
+| `compress` | unqualified members are skipped over and the qualified ones are counted in order |
+
+It reports whether the old system matches, and where it does not, exactly which upgrades differ.
+
+**What it can and cannot tell.** It can only separate the rules on an upgrade whose sponsor chain has an
+unqualified member with a qualified one above. If the ledger has none, it says **undetermined** rather than
+guess, and that question goes to the client. Amounts alone cannot tell `skip` from `compress` while Gen 2–4
+all pay the same rate, so it also compares the `Gen` label on each row and reports both.
+
+Membership expiry is not on the profile, so "who qualified" is taken from who the old system actually paid,
+which isolates the distribution rule. Section 3 of the output then shows where "paid" and "Silver+" disagree,
+which is the lapsed-membership signal.
+
+It also answers the open trigger question: section 4 shows whether upgrades beyond the first Silver, and which
+transaction types, are followed by a commission.
+
+The console summary carries numbers and verdicts only, no emails, so it is safe to paste. Detail goes to
+`capture/private/verify-*` (real emails) and `capture/shareable/verify-*` (aliased).
 
 ## Why it is read-only
 

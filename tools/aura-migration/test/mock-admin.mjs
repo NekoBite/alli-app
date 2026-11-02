@@ -36,10 +36,13 @@ export function buildData(count = 45) {
     if (m.tier === 'LEATHER') continue;
     const at = new Date(Date.UTC(2026, 9, 20) + n * 3_600_000 * 12).toISOString().slice(0, 19);
     n += 1;
+    // The real panel books commissions a second after the upgrade payment.
+    m.upgradeAt = at;
+    const booked = new Date(Date.parse(`${at}Z`) + 1000).toISOString().slice(0, 19);
     let up = m.sponsor;
     for (let gen = 1; gen <= 4 && up !== null; gen += 1) {
-      const percent = gen === 1 ? (at < CUTOVER ? 40 : 20) : 10;
-      commissions.push({ at, beneficiary: members[up], source: m, generation: gen, percent, amount: (25 * percent) / 100 });
+      const percent = gen === 1 ? (booked < CUTOVER ? 40 : 20) : 10;
+      commissions.push({ at: booked, beneficiary: members[up], source: m, generation: gen, percent, amount: (25 * percent) / 100 });
       up = members[up].sponsor;
     }
   }
@@ -197,7 +200,7 @@ export function startMockAdmin({ members: count = 45, expireAfter: initialExpire
     const children = members.filter((c) => c.sponsor === m.i);
     const earned = commissions.filter((c) => c.beneficiary.i === m.i);
     const earnedTotal = earned.reduce((s, c) => s + c.amount, 0);
-    const upgrade = m.tier === 'LEATHER' ? [] : [{ amount: 25, at: fmtDate(m.registeredAt) }];
+    const upgrade = m.tier === 'LEATHER' ? [] : [{ amount: 25, at: fmtDate(m.upgradeAt) }];
     const row = (cells) => `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`;
     const body = `
       <a href="/members">Members</a>

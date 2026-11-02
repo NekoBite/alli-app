@@ -143,8 +143,10 @@ jobs:
         with:
           node-version: 22
 
+      # The commission verifier imports the app's production TypeScript (splitCommission), so type
+      # stripping is asked for explicitly rather than relied on as a default of the runner's Node.
       - name: Test
-        run: node --test tools/aura-migration/test/*.test.mjs
+        run: node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tools/aura-migration/test/*.test.mjs
 
   bundle:
     # Catches what tsc cannot: a bad import path, a missing native module, or
