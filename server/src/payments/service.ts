@@ -1,3 +1,4 @@
+import { goldUnlockRequirement, silverDirects } from '../admin/settings.ts';
 import { randomBytes } from 'node:crypto';
 import { getAddress, parseUnits } from 'ethers';
 
@@ -47,7 +48,7 @@ export type IntentView = {
 type Quote = { symbol: 'ALLI' | 'USDT'; price: number; ref: Record<string, unknown> };
 
 /** Prices a purchase from the shared rules. The app shows the same numbers; this one binds. */
-async function quote(db: Db, userId: string, input: IntentInput, now: number): Promise<Quote> {
+export async function quote(db: Db, userId: string, input: IntentInput, now: number): Promise<Quote> {
   switch (input.kind) {
     case 'runs': {
       const left = remainingPurchasableRuns((await entitlement(db, userId, now)).extraRunsBoughtThisMonth);
@@ -74,6 +75,12 @@ async function quote(db: Db, userId: string, input: IntentInput, now: number): P
         throw ApiError.badRequest('bad_upgrade', 'That is not an upgrade from your current shoe.');
       }
       if (input.currency !== 'USDT') throw ApiError.badRequest('usdt_only', 'Shoe upgrades are sold in USDT.');
+      if (input.tier === 'gold') {
+        const need = await goldUnlockRequirement(db);
+        if ((await silverDirects(db, userId)) < need) {
+          throw ApiError.forbidden('gold_locked', `Gold unlocks when ${need} of your direct referrals have upgraded to Silver.`);
+        }
+      }
       return { symbol: 'USDT', price, ref: { tier: input.tier, from: current } };
     }
     case 'order': {

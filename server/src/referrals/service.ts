@@ -1,3 +1,4 @@
+import { goldUnlockRequirement, silverDirects } from '../admin/settings.ts';
 import { randomInt } from 'node:crypto';
 
 import { pool, transaction, type Db } from '../db/pool.ts';
@@ -278,16 +279,13 @@ export async function programDetail(userId: string, program: ReferralProgramId, 
     rolledUp: e.rolledUp,
   };
   if (program === 'run') {
-    const { rows } = await pool.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM sponsorships s JOIN users u ON u.id = s.user_id
-        WHERE s.program = 'run' AND s.sponsor_id = $1 AND u.shoe_tier IN ('silver', 'gold')`,
-      [userId],
-    );
+    const goal = await goldUnlockRequirement();
+    const have = await silverDirects(pool, userId);
     detail.milestone = {
       label: 'Path to Gold',
-      progress: Math.min(5, Number(rows[0]?.n ?? 0)),
-      goal: 5,
-      detail: '5 direct referrals upgraded to Silver unlocks Gold.',
+      progress: Math.min(goal, have),
+      goal,
+      detail: `${goal} direct referrals upgraded to Silver unlocks Gold.`,
     };
   }
   if (program === 'card') {
